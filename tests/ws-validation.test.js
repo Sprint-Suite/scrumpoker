@@ -324,7 +324,7 @@ test('malformed envelopes cannot crash the server', async (t) => {
   assert.equal(bob.ws.readyState, WebSocket.OPEN);
 });
 
-test('logging in to a second room without logout cannot crash the server', async (t) => {
+test('a second login without logout moves the user and hands facilitation on', async (t) => {
   const { port, child } = await startServer(t);
 
   const alice = await connectClient(t, port);
