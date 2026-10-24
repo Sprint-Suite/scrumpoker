@@ -130,16 +130,21 @@ function waitForMessage(ws, predicate, timeoutMs = 3000) {
   });
 }
 
-async function connectClient(t, port) {
-  const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`, {
-    headers: { cookie: SESSION_COOKIE }
-  });
+async function awaitYourId(t, ws) {
   t.after(() => {
     if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) ws.close();
   });
 
   const idMsg = await waitForMessage(ws, (m) => m.type === 'yourId' && m.payload?.id);
   return { id: idMsg.payload.id, ws };
+}
+
+function connectClient(t, port) {
+  return awaitYourId(t, new WebSocket(`ws://127.0.0.1:${port}/ws`, { headers: { cookie: SESSION_COOKIE } }));
+}
+
+function connectGuest(t, port, token) {
+  return awaitYourId(t, new WebSocket(`ws://127.0.0.1:${port}/ws?token=${token}`));
 }
 
 function send(ws, type, payload) {
@@ -343,4 +348,30 @@ test('a second login without logout moves the user and hands facilitation on', a
 
   assert.equal(child.exitCode, null, 'server process must still be running');
   assert.equal((await fetch(`http://127.0.0.1:${port}/health`)).ok, true);
+});
+
+test('a guest cannot rejoin a recreated room without its new link', async (t) => {
+  const { port } = await startServer(t);
+  const alice = await connectClient(t, port);
+  const first = await loginClient(alice, { name: 'Alice', role: 'Facilitator', room: 'rotate' });
+  const oldToken = first.shareToken;
+  const guest = await connectGuest(t, port, oldToken);
+  await loginClient(guest, { name: 'Guest' });
+
+  const aliceEnded = waitForMessage(alice.ws, (m) => m.type === 'sessionEnded');
+  const guestEnded = waitForMessage(guest.ws, (m) => m.type === 'sessionEnded');
+  send(alice.ws, 'endSession', {});
+  await Promise.all([aliceEnded, guestEnded]);
+  const second = await loginClient(alice, { name: 'Alice', role: 'Facilitator', room: 'rotate' });
+  assert.notEqual(second.shareToken, oldToken);
+
+  const refused = waitForMessage(guest.ws, (m) => m.type === 'error');
+  send(guest.ws, 'login', { name: 'Guest' });
+  assert.match((await refused).payload.message, /closed|invalid/);
+
+  const guest2 = await connectGuest(t, port, second.shareToken);
+  const aliceSeesGuest2Promise = waitForState(alice.ws, (s) => Boolean(findParticipant(s, 'Guest Two')));
+  await loginClient(guest2, { name: 'Guest Two' });
+  const aliceSeesGuest2 = await aliceSeesGuest2Promise;
+  assert.equal(findParticipant(aliceSeesGuest2, 'Guest'), undefined);
 });
