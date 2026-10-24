@@ -98,7 +98,7 @@ async function startServer(t) {
   });
 
   await waitForHealth(port, () => output);
-  return { port };
+  return { port, child };
 }
 
 function waitForMessage(ws, predicate, timeoutMs = 3000) {
@@ -283,5 +283,43 @@ test('valid messages still work normally after an invalid message is dropped', a
   const finalState = await aliceSeesVotePromise;
 
   assert.equal(findParticipant(finalState, 'Bob')?.vote, '8');
+  assert.equal(bob.ws.readyState, WebSocket.OPEN);
+});
+
+test('malformed envelopes cannot crash the server', async (t) => {
+  const { port, child } = await startServer(t);
+
+  const alice = await connectClient(t, port);
+  await loginClient(alice, { name: 'Alice', role: 'Facilitator', room: 'crash-test' });
+
+  const bob = await connectClient(t, port);
+  const aliceSeesBob = waitForState(alice.ws, (s) => Boolean(findParticipant(s, 'Bob')));
+  await loginClient(bob, { name: 'Bob', role: 'Voter', room: 'crash-test' });
+  await aliceSeesBob;
+
+  let arrayTypeVoteApplied = false;
+  alice.ws.on('message', (raw) => {
+    const msg = JSON.parse(raw.toString());
+    if (msg.type === 'updateState' && findParticipant(msg.payload, 'Bob')?.vote === '8') {
+      arrayTypeVoteApplied = true;
+    }
+  });
+
+  const frames = [
+    'null', '5', '"x"', '[]',
+    '{"type":["vote"],"payload":{"vote":"8"}}',
+    '{"type":{"toString":1}}',
+    '{"type":"constructor"}', '{"type":"__proto__"}', '{"type":"toString"}'
+  ];
+  for (const frame of frames) bob.ws.send(frame);
+
+  const aliceSeesVote = waitForState(alice.ws, (s) => findParticipant(s, 'Bob')?.vote === '5');
+  send(bob.ws, 'vote', { vote: '5' });
+  await aliceSeesVote;
+
+  assert.equal(arrayTypeVoteApplied, false, 'array-typed vote frame must not be applied');
+  assert.equal(child.exitCode, null, 'server process must still be running');
+  const health = await fetch(`http://127.0.0.1:${port}/health`);
+  assert.ok(health.ok);
   assert.equal(bob.ws.readyState, WebSocket.OPEN);
 });
