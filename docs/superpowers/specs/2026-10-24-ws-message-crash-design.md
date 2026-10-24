@@ -35,6 +35,6 @@ All three throw inside the `ws` `message` listener, outside the `JSON.parse` `tr
 
 Room persistence across restarts; rate limiting; changes to handler logic or schemas for known types.
 
-## Known residual (separate story)
+## Re-login on an open socket
 
-A company member can still crash the process with a sequence of *well-formed* messages: log in to room R1 as Facilitator, send `login` again for R2 without `logout`, disconnect; a remaining R1 member's `changeRole` to Facilitator then writes to `participants[room.facilitatorId]`, which no longer exists (`lib/wsHandlers.js:241`). The cause is that a second `login` never leaves the first room, which also lets role changes in R1 reach a user now in R2. Guests cannot trigger it, and the shipped client always sends `logout` first. Fixing it changes login semantics and room isolation, so it is out of this change's scope.
+A second `login` on the same socket used to leave the user in their first room, so a room could keep a `facilitatorId` for someone who had moved on and then disconnected; a later `changeRole` wrote to that missing participant and crashed the process, and facilitator changes in the first room could rewrite the role of a user now in another room. A second `login` now moves the user: once the new login passes its checks, `handleLogin` runs the normal exit for the current room (facilitation hands on as on disconnect), then joins the new one. A rejected login leaves the user where they were. A guest who was the last member of their room closes it by leaving and is told so, matching logout-then-login. Decided by David, 2026-10-24.

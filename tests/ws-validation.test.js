@@ -323,3 +323,24 @@ test('malformed envelopes cannot crash the server', async (t) => {
   assert.ok(health.ok);
   assert.equal(bob.ws.readyState, WebSocket.OPEN);
 });
+
+test('logging in to a second room without logout cannot crash the server', async (t) => {
+  const { port, child } = await startServer(t);
+
+  const alice = await connectClient(t, port);
+  await loginClient(alice, { name: 'Alice', role: 'Facilitator', room: 'first' });
+  const bob = await connectClient(t, port);
+  await loginClient(bob, { name: 'Bob', role: 'Voter', room: 'first' });
+
+  const bobSeesAliceLeave = waitForState(bob.ws, (s) => !findParticipant(s, 'Alice'));
+  await loginClient(alice, { name: 'Alice', role: 'Voter', room: 'second' });
+  await bobSeesAliceLeave;
+  alice.ws.close();
+
+  const bobPromoted = waitForState(bob.ws, (s) => findParticipant(s, 'Bob')?.role === 'Facilitator');
+  send(bob.ws, 'changeRole', { newRole: 'Facilitator' });
+  await bobPromoted;
+
+  assert.equal(child.exitCode, null, 'server process must still be running');
+  assert.equal((await fetch(`http://127.0.0.1:${port}/health`)).ok, true);
+});
