@@ -127,3 +127,11 @@ test('validateMessage: unknown type returns ok:false with unknown_message_type',
   assert.equal(result.ok, false);
   assert.equal(result.error?.message, 'unknown_message_type');
 });
+
+test('validateMessage: inherited Object.prototype names are unknown types, not crashes', () => {
+  for (const type of ['constructor', '__proto__', 'toString', 'hasOwnProperty', 'valueOf']) {
+    const result = validateMessage(type, {});
+    assert.equal(result.ok, false, type);
+    assert.equal(result.error.message, 'unknown_message_type', type);
+  }
+});

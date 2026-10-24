@@ -52,7 +52,7 @@ const SCHEMAS = {
  * @returns {{ ok: true, data: object } | { ok: false, error: Error }}
  */
 function validateMessage(type, payload) {
-  const schema = SCHEMAS[type];
+  const schema = Object.hasOwn(SCHEMAS, type) ? SCHEMAS[type] : undefined;
   if (!schema) return { ok: false, error: new Error("unknown_message_type") };
   // Treat missing/null payload as an empty object for schema types that accept it.
   const r = schema.safeParse(payload ?? {});
