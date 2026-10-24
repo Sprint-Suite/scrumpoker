@@ -2350,3 +2350,9 @@ Change (front end only):
 Verification:
 - `npm test`: 144 passed. `npx playwright test`: 9 passed.
 - Browser measurement (1280px, facilitator): every left-column box identical at 2 and 13 participants; participants panel 284px → 1366px tall. Grouped results width equals vote panel (734px). At 600px the order is vote, buttons, results, grouped, participants. No console errors.
+
+Stage review (TagTeam, `docs/debates/2026-10-24-code-review-and-security-audit-room-layout-rework.md`):
+- ChatGPT found `public/join.html` (anonymous guest view) has its own `.room-grid`; removing the `grid-column` rules put grouped results in the participants column there. Fixed with the same `.room-main` wrapper (no facilitator controls on that page).
+- Added `tests/e2e/helpers/layout.js` (`expectResultsInVoteColumn`), asserted after reveal in the smoke and anonymous-join specs. Confirmed it fails against the unfixed `join.html` (grouped results at x=800 vs 50).
+- Logged, not fixed: the assertion pins column placement, not vertical independence from participant count. A cheap future check is to enlarge the participants panel and compare left-column y positions.
+- `npm test` 144 passed; `npx playwright test` 9 passed.

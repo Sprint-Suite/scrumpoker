@@ -1,6 +1,7 @@
 const { test, expect } = require('@playwright/test');
 const { seedSession } = require('./helpers/seed');
 const { injectSession } = require('./helpers/_auth');
+const { expectResultsInVoteColumn } = require('./helpers/layout');
 
 // An authenticated company member opens a room and shares its anonymous link;
 // a person with NO account joins via that link and can vote but cannot facilitate.
@@ -44,6 +45,8 @@ test('anonymous player joins via share link, votes, and cannot facilitate', asyn
     await page.click('#show-votes-button');
     await expect(anon.locator('#vote-summary')).toBeVisible();
     await expect(anon.locator('#average-vote')).toHaveText('8.0');
+    await expect(anon.locator('#ordered-votes')).toBeVisible();
+    await expectResultsInVoteColumn(anon);
   } finally {
     await anonCtx.close();
   }
