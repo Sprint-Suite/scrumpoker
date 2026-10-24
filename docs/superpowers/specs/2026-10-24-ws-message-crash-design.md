@@ -34,3 +34,7 @@ All three throw inside the `ws` `message` listener, outside the `JSON.parse` `tr
 ## Non-goals
 
 Room persistence across restarts; rate limiting; changes to handler logic or schemas for known types.
+
+## Known residual (separate story)
+
+A company member can still crash the process with a sequence of *well-formed* messages: log in to room R1 as Facilitator, send `login` again for R2 without `logout`, disconnect; a remaining R1 member's `changeRole` to Facilitator then writes to `participants[room.facilitatorId]`, which no longer exists (`lib/wsHandlers.js:241`). The cause is that a second `login` never leaves the first room, which also lets role changes in R1 reach a user now in R2. Guests cannot trigger it, and the shipped client always sends `logout` first. Fixing it changes login semantics and room isolation, so it is out of this change's scope.
