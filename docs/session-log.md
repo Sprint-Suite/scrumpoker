@@ -2336,3 +2336,17 @@ Result:
 - `npm run test:e2e` passed with 4 browser tests.
 - `npm audit --omit=dev` reported `found 0 vulnerabilities`.
 - No project `node server.js` process was left running.
+
+## 2026-10-24 - Room Layout: Independent Columns
+
+Branch: `feat/room-layout`. Spec: `docs/room-layout-handover.md`.
+
+Problem: `.room-grid` used implicit rows, so a growing participants list stretched row 1 and pushed results, grouped results and the facilitator buttons down, leaving a gap under the deck.
+
+Change (front end only):
+- `public/index.html`: new `.room-main` wrapper holds the vote panel, `#facilitator-controls` (moved inside the grid), vote summary and grouped results. `.participants-panel` follows it. Ids, classes and aria attributes unchanged. `poker.css` link cache-busted with `?v=2`.
+- `public/css/poker.css`: `.room-main` flex column; removed the `grid-column` rules for result and grouped cards (desktop and the 820px override) and the controls' `margin-top`.
+
+Verification:
+- `npm test`: 144 passed. `npx playwright test`: 9 passed.
+- Browser measurement (1280px, facilitator): every left-column box identical at 2 and 13 participants; participants panel 284px → 1366px tall. Grouped results width equals vote panel (734px). At 600px the order is vote, buttons, results, grouped, participants. No console errors.
