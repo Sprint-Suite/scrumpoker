@@ -399,7 +399,7 @@ test('authed login is company-scoped and ignores teamId', (t) => {
 test('anonymous login forces Voter, ignores requested role/room, binds to ws.anonRoom', (t) => {
   const harness = createHarness(t);
   harness.rooms.set('co1-planning', { users: new Set(), lastActive: Date.now(), votesRevealed: false, facilitatorId: null, shareToken: 'tok' });
-  const ws = { userId: 'bob', authed: false, anonRoom: 'co1-planning' };
+  const ws = { userId: 'bob', authed: false, anonRoom: 'co1-planning', anonToken: 'tok' };
   handleLogin({ ws, userId: 'bob', payload: { name: 'Bob', role: ROLES.FACILITATOR, room: 'evil-room' }, rooms: harness.rooms, participants: harness.participants, sendToClient: harness.sendToClient, sendRoomState: harness.sendRoomState });
   assert.equal(harness.participants.bob.roomName, 'co1-planning');
   assert.equal(harness.participants.bob.role, ROLES.VOTER);
@@ -476,7 +476,7 @@ test('a guest alone in their room who logs in again is told it closed, not given
   const h = createHarness(t);
   const roomName = 'co1-planning';
   joinRoom(h.rooms, roomName, 'host');
-  const guestWs = { userId: 'guest', authed: false, anonRoom: roomName };
+  const guestWs = { userId: 'guest', authed: false, anonRoom: roomName, anonToken: h.rooms.get(roomName).shareToken };
   handleLogin({ ...h, ws: guestWs, userId: 'guest', payload: { name: 'Guest' } });
   h.rooms.get(roomName).users.delete('host');
 
@@ -485,4 +485,46 @@ test('a guest alone in their room who logs in again is told it closed, not given
   assert.equal(h.rooms.has(roomName), false);
   assert.equal(h.participants.guest, undefined);
   assert.match(h.clientMessages.at(-1).message.payload.message, /closed/);
+});
+
+test('a guest is refused once their room is recreated under a new token', (t) => {
+  const h = createHarness(t);
+  const roomName = 'co1-planning';
+  joinRoom(h.rooms, roomName, 'host');
+  const guestWs = { userId: 'guest', authed: false, anonRoom: roomName, anonToken: h.rooms.get(roomName).shareToken };
+  handleLogin({ ...h, ws: guestWs, userId: 'guest', payload: { name: 'Guest' } });
+  assert.equal(h.participants.guest.roomName, roomName);
+  h.rooms.delete(roomName);
+  delete h.participants.guest;
+  joinRoom(h.rooms, roomName, 'host2');
+
+  handleLogin({ ...h, ws: guestWs, userId: 'guest', payload: { name: 'Guest' } });
+
+  assert.equal(h.participants.guest, undefined);
+  assert.equal(h.rooms.get(roomName).users.has('guest'), false);
+  assert.match(h.clientMessages.at(-1).message.payload.message, /closed|invalid/);
+});
+
+test('a guest socket without a token is refused', (t) => {
+  const h = createHarness(t);
+  h.rooms.set('co1-planning', { users: new Set(), lastActive: Date.now(), votesRevealed: false, facilitatorId: null, shareToken: undefined });
+  const guestWs = { userId: 'guest', authed: false, anonRoom: 'co1-planning' };
+
+  handleLogin({ ...h, ws: guestWs, userId: 'guest', payload: { name: 'Guest' } });
+
+  assert.equal(h.participants.guest, undefined);
+  assert.match(h.clientMessages.at(-1).message.payload.message, /closed|invalid/);
+});
+
+test('a guest re-sending login with a valid token stays in the room', (t) => {
+  const h = createHarness(t);
+  const roomName = 'co1-planning';
+  joinRoom(h.rooms, roomName, 'host');
+  const guestWs = { userId: 'guest', authed: false, anonRoom: roomName, anonToken: h.rooms.get(roomName).shareToken };
+
+  handleLogin({ ...h, ws: guestWs, userId: 'guest', payload: { name: 'Guest' } });
+  handleLogin({ ...h, ws: guestWs, userId: 'guest', payload: { name: 'Guest' } });
+
+  assert.equal(h.participants.guest.roomName, roomName);
+  assert.equal(h.rooms.get(roomName).users.has('guest'), true);
 });

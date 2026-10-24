@@ -23,6 +23,7 @@ test('decideUpgrade: no session but valid room token -> anonymous', async () => 
   assert.equal(d.ok, true);
   assert.equal(d.authed, false);
   assert.equal(d.anonRoom, 'co1-planning');
+  assert.equal(d.anonToken, token);
 });
 
 test('decideUpgrade: no session and bad token -> 401', async () => {
