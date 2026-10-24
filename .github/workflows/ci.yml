@@ -16,9 +16,6 @@ jobs:
     name: Node checks
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    # Chromium and its system libraries come preinstalled, so no apt step.
-    # The tag must match the locked @playwright/test version.
-    container: mcr.microsoft.com/playwright:v1.59.1-noble
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
@@ -69,6 +66,21 @@ jobs:
 
       - name: Verify the suite link loads
         run: node -e "require('@suite/auth-client/lib/sessions-db')"
+
+      # The runner image already has Chromium's system libraries, so no
+      # --with-deps: that pulled fonts through a slow apt mirror on every run.
+      - name: Read the Playwright version
+        id: playwright
+        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Cache the Playwright browser
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}-chromium-shell
+
+      - name: Install the Chromium headless shell
+        run: npx playwright install --only-shell chromium
 
       - name: Check server syntax
         run: node --check server.js
