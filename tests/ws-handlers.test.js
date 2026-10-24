@@ -507,7 +507,7 @@ test('a guest is refused once their room is recreated under a new token', (t) =>
 
 test('a guest socket without a token is refused', (t) => {
   const h = createHarness(t);
-  h.rooms.set('co1-planning', { users: new Set(), lastActive: Date.now(), votesRevealed: false, facilitatorId: null, shareToken: 'tok' });
+  h.rooms.set('co1-planning', { users: new Set(), lastActive: Date.now(), votesRevealed: false, facilitatorId: null, shareToken: undefined });
   const guestWs = { userId: 'guest', authed: false, anonRoom: 'co1-planning' };
 
   handleLogin({ ...h, ws: guestWs, userId: 'guest', payload: { name: 'Guest' } });
