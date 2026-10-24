@@ -26,9 +26,9 @@ The same happens whenever a room closes (last member leaves, or it expires) and 
 
 ## Tests
 
-- Unit (`tests/ws-handlers.test.js`): a guest whose room was deleted and recreated under the same name with a new token is refused and not added to the room. The existing guest tests gain a matching `anonToken`.
+- Unit (`tests/ws-handlers.test.js`): a guest whose room was deleted and recreated under the same name with a new token is refused and not added to the room. A guest socket with no `anonToken` is refused. The existing guest tests gain a matching `anonToken`.
 - Unit (`tests/ws-server-upgrade.test.js`): the anonymous decision carries the token.
-- Real server (`tests/ws-validation.test.js`): the repro above over real sockets. It covers the seam where `wsServer.js` stores the token. Seen failing on current `main` before the fix.
+- Real server (`tests/ws-validation.test.js`): the repro above over real sockets, ending with a second guest holding the new link being admitted. It covers the seam where `wsServer.js` stores the token. Seen failing on current `main` before the fix.
 
 ## Non-goals
 
