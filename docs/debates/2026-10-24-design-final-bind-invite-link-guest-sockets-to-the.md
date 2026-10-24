@@ -22,4 +22,3 @@ This approves the design, not an implementation: the token binding and claimed r
 **Agreed solution, in ChatGPT's words:**
 
 Carry the validated invite token from decideUpgrade into ws.anonToken. After the existing guest leave-first step, require an existing room, a nonempty socket token, and equality with that room's current shareToken before joining; otherwise return the existing closed/invalid-link error. Preserve authenticated behavior. Add upgrade-token propagation, stale/missing-token handler coverage, and a real-socket endSession/recreate regression that also proves a fresh-token guest can join.
-
