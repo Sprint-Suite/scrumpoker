@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** No inbound WebSocket message, however malformed, can stop the server process.
+**Goal:** No malformed WebSocket envelope or inherited type name can stop the server process. (Well-formed message sequences are out of scope; see the spec's Known residual.)
 
 **Architecture:** `validateMessage` only recognises its own schema keys; `wsServer`'s message listener drops any parsed value that is not an object with a string `type` before touching it.
 
