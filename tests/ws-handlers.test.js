@@ -444,3 +444,45 @@ test('changeRole step-down will not hand facilitation to an anonymous member', (
   assert.equal(harness.rooms.get('co1-r').facilitatorId, 'fac');
   assert.match(harness.clientMessages.at(-1).message.payload.message, /assign another facilitator/i);
 });
+
+test('handleLogin for a second room leaves the first room and hands facilitation on', (t) => {
+  const h = createHarness(t);
+  handleLogin({ ...h, ws: wsWith('alice'), userId: 'alice', payload: loginPayload({ name: 'Alice' }) });
+  handleLogin({ ...h, ws: wsWith('bob'), userId: 'bob', payload: loginPayload({ name: 'Bob', role: ROLES.VOTER }) });
+
+  handleLogin({ ...h, ws: wsWith('alice'), userId: 'alice', payload: loginPayload({ name: 'Alice', role: ROLES.VOTER, room: 'retro' }) });
+
+  const planning = h.rooms.get('co1-planning');
+  assert.equal(planning.users.has('alice'), false);
+  assert.equal(planning.facilitatorId, 'bob');
+  assert.equal(h.participants.bob.role, ROLES.FACILITATOR);
+  assert.equal(h.participants.alice.roomName, 'co1-retro');
+  assert.deepEqual(h.roomStates.slice(-2), ['co1-planning', 'co1-retro']);
+});
+
+test('a rejected second login leaves the user where they were', (t) => {
+  const h = createHarness(t);
+  handleLogin({ ...h, ws: wsWith('alice'), userId: 'alice', payload: loginPayload({ name: 'Alice' }) });
+
+  handleLogin({ ...h, ws: wsWith('alice'), userId: 'alice', payload: loginPayload({ name: 'Alice', role: 'Owner', room: 'retro' }) });
+
+  assert.equal(h.rooms.get('co1-planning').users.has('alice'), true);
+  assert.equal(h.rooms.get('co1-planning').facilitatorId, 'alice');
+  assert.equal(h.participants.alice.roomName, 'co1-planning');
+  assert.equal(h.rooms.has('co1-retro'), false);
+});
+
+test('a guest alone in their room who logs in again is told it closed, not given a new room', (t) => {
+  const h = createHarness(t);
+  const roomName = 'co1-planning';
+  joinRoom(h.rooms, roomName, 'host');
+  const guestWs = { userId: 'guest', authed: false, anonRoom: roomName };
+  handleLogin({ ...h, ws: guestWs, userId: 'guest', payload: { name: 'Guest' } });
+  h.rooms.get(roomName).users.delete('host');
+
+  handleLogin({ ...h, ws: guestWs, userId: 'guest', payload: { name: 'Guest' } });
+
+  assert.equal(h.rooms.has(roomName), false);
+  assert.equal(h.participants.guest, undefined);
+  assert.match(h.clientMessages.at(-1).message.payload.message, /closed/);
+});
