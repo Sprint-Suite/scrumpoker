@@ -87,11 +87,11 @@ matching `tests/*.test.js`.
 files gone, the app holds no state of its own on disk; sessions live in the
 hub-written SQLite file it only reads.
 
-- `rooms` — `Map<roomName, { users: Set<userId>, lastActive, votesRevealed, facilitatorId }>`.
+- `rooms` — `Map<roomName, { users: Set<userId>, lastActive, votesRevealed, facilitatorIds }>`.
 - `participants` — object keyed by `userId` holding the live `ws` socket, role, name, vote, room.
 - Rooms idle for **60 minutes** are swept every minute (`expireRooms`).
 - Card deck (fixed): `['0','1','2','3','5','8','13','?']`.
-- Roles: **Voter** (can vote), **Observer** (cannot), **Facilitator** (can vote + reveal/reset/manage). First user into a room becomes facilitator; the role is reassigned automatically if the facilitator leaves.
+- Roles: **Voter** (can vote), **Observer** (cannot), **Facilitator** (can vote + reveal/reset/manage). First user into a room becomes facilitator. A facilitator can add one co-facilitator (at most two, company members only, equal powers); members cannot promote themselves. When the last facilitator leaves or steps down, the role passes to another company member.
 
 ### 2.4 WebSocket Protocol
 

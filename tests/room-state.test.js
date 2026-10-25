@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 
 const {
   DEFAULT_ROOM_EXPIRY_MS,
-  assignFacilitator,
+  normalizeFacilitators,
   expireRooms,
   getRoomParticipants,
   getRoomState,
@@ -35,7 +35,7 @@ test('joinRoom creates and updates room membership', () => {
   assert.deepEqual([...updatedRoom.users], ['alice', 'bob']);
   assert.equal(updatedRoom.lastActive, 150);
   assert.equal(updatedRoom.votesRevealed, false);
-  assert.equal(updatedRoom.facilitatorId, null);
+  assert.deepEqual(updatedRoom.facilitatorIds, []);
 });
 
 test('leaveRoom updates activity and removes empty rooms', () => {
@@ -135,7 +135,7 @@ test('getRoomState projects room reveal and facilitator state', () => {
   const rooms = new Map();
   const room = joinRoom(rooms, 'alpha', 'alice', 100);
   room.votesRevealed = true;
-  room.facilitatorId = 'alice';
+  room.facilitatorIds = ['alice'];
   room.displayName = 'Alpha';
 
   const participants = {
@@ -156,14 +156,14 @@ test('getRoomState projects room reveal and facilitator state', () => {
         }
       ],
       votesRevealed: true,
-      facilitatorId: 'alice',
+      facilitatorIds: ['alice'],
       shareToken: rooms.get('alpha').shareToken,
       displayName: 'Alpha'
     }
   });
 });
 
-test('assignFacilitator chooses the first room member when needed', () => {
+test('normalizeFacilitators chooses the first room member when needed', () => {
   const rooms = new Map();
   joinRoom(rooms, 'alpha', 'alice', 100);
   joinRoom(rooms, 'alpha', 'bob', 100);
@@ -173,10 +173,8 @@ test('assignFacilitator chooses the first room member when needed', () => {
     bob: participant('bob', 'alpha', { authed: true })
   };
 
-  const facilitatorId = assignFacilitator(rooms, participants, 'alpha');
-
-  assert.equal(facilitatorId, 'alice');
-  assert.equal(rooms.get('alpha').facilitatorId, 'alice');
+  assert.deepEqual(normalizeFacilitators(rooms, participants, 'alpha'), ['alice']);
+  assert.deepEqual(rooms.get('alpha').facilitatorIds, ['alice']);
   assert.equal(participants.alice.role, 'Facilitator');
   assert.equal(participants.bob.role, 'Voter');
 });
@@ -185,7 +183,7 @@ test('reassignFacilitatorIfLeaving promotes the next room member', () => {
   const rooms = new Map();
   const room = joinRoom(rooms, 'alpha', 'alice', 100);
   joinRoom(rooms, 'alpha', 'bob', 100);
-  room.facilitatorId = 'alice';
+  room.facilitatorIds = ['alice'];
 
   const participants = {
     alice: participant('alice', 'alpha', { role: 'Facilitator', authed: true }),
@@ -195,7 +193,7 @@ test('reassignFacilitatorIfLeaving promotes the next room member', () => {
   leaveRoom(rooms, 'alpha', 'alice', 200);
   reassignFacilitatorIfLeaving(rooms, participants, 'alpha', 'alice');
 
-  assert.equal(rooms.get('alpha').facilitatorId, 'bob');
+  assert.deepEqual(rooms.get('alpha').facilitatorIds, ['bob']);
   assert.equal(participants.bob.role, 'Facilitator');
 });
 
@@ -227,8 +225,7 @@ test('getRoomParticipants does not leak the internal authed flag', () => {
   assert.equal(out[0].name, 'U');
 });
 
-test('assignFacilitator skips anonymous participants', () => {
-  const { joinRoom, assignFacilitator } = require('../lib/roomState');
+test('normalizeFacilitators skips anonymous participants', () => {
   const rooms = new Map();
   joinRoom(rooms, 'co1-r', 'anon1');
   joinRoom(rooms, 'co1-r', 'auth1');
@@ -236,11 +233,85 @@ test('assignFacilitator skips anonymous participants', () => {
     anon1: { id: 'anon1', role: 'Voter', roomName: 'co1-r', authed: false },
     auth1: { id: 'auth1', role: 'Voter', roomName: 'co1-r', authed: true },
   };
-  const fid = assignFacilitator(rooms, participants, 'co1-r');
-  assert.equal(fid, 'auth1');
+  assert.deepEqual(normalizeFacilitators(rooms, participants, 'co1-r'), ['auth1']);
 
   const rooms2 = new Map();
   joinRoom(rooms2, 'co1-x', 'anonA');
   const p2 = { anonA: { id: 'anonA', role: 'Voter', roomName: 'co1-x', authed: false } };
-  assert.equal(assignFacilitator(rooms2, p2, 'co1-x'), null);
+  assert.deepEqual(normalizeFacilitators(rooms2, p2, 'co1-x'), []);
+  assert.equal(p2.anonA.role, 'Voter');
 });
+
+test('normalizeFacilitators keeps a co-facilitator when one leaves', () => {
+  const rooms = new Map();
+  const room = joinRoom(rooms, 'alpha', 'alice', 100);
+  joinRoom(rooms, 'alpha', 'bob', 100);
+  joinRoom(rooms, 'alpha', 'carol', 100);
+  room.facilitatorIds = ['alice', 'bob'];
+  const participants = {
+    alice: participant('alice', 'alpha', { role: 'Facilitator', authed: true }),
+    bob: participant('bob', 'alpha', { role: 'Facilitator', authed: true }),
+    carol: participant('carol', 'alpha', { authed: true })
+  };
+
+  leaveRoom(rooms, 'alpha', 'alice', 200);
+  reassignFacilitatorIfLeaving(rooms, participants, 'alpha', 'alice');
+
+  assert.deepEqual(room.facilitatorIds, ['bob']);
+  assert.equal(participants.carol.role, 'Voter');
+});
+
+test('normalizeFacilitators drops missing, cross-room, guest and duplicate ids and caps the list', () => {
+  const rooms = new Map();
+  const room = joinRoom(rooms, 'alpha', 'alice', 100);
+  joinRoom(rooms, 'alpha', 'bob', 100);
+  joinRoom(rooms, 'alpha', 'carol', 100);
+  joinRoom(rooms, 'alpha', 'guest', 100);
+  joinRoom(rooms, 'beta', 'dave', 100);
+  const participants = {
+    alice: participant('alice', 'alpha', { authed: true }),
+    bob: participant('bob', 'alpha', { authed: true }),
+    carol: participant('carol', 'alpha', { authed: true }),
+    guest: participant('guest', 'alpha', { authed: false }),
+    dave: participant('dave', 'beta', { authed: true })
+  };
+  room.facilitatorIds = ['ghost', 'dave', 'guest', 'alice', 'alice', 'bob', 'carol'];
+
+  assert.deepEqual(normalizeFacilitators(rooms, participants, 'alpha'), ['alice', 'bob']);
+  assert.equal(participants.dave.role, 'Voter', 'a cross-room id is never promoted');
+  assert.equal(participants.guest.role, 'Voter');
+  assert.equal(participants.carol.role, 'Voter');
+  assert.equal(participants.alice.role, 'Facilitator');
+  assert.equal(participants.bob.role, 'Facilitator');
+});
+
+test('normalizeFacilitators demotes a Facilitator role that is not on the list', () => {
+  const rooms = new Map();
+  const room = joinRoom(rooms, 'alpha', 'alice', 100);
+  joinRoom(rooms, 'alpha', 'bob', 100);
+  room.facilitatorIds = ['alice'];
+  const participants = {
+    alice: participant('alice', 'alpha', { role: 'Facilitator', authed: true }),
+    bob: participant('bob', 'alpha', { role: 'Facilitator', authed: true })
+  };
+
+  normalizeFacilitators(rooms, participants, 'alpha');
+
+  assert.equal(participants.bob.role, 'Voter');
+});
+
+test('normalizeFacilitators demotes a stale participant of this room who is no longer a member', () => {
+  const rooms = new Map();
+  const room = joinRoom(rooms, 'alpha', 'alice', 100);
+  room.facilitatorIds = ['alice', 'stale'];
+  const participants = {
+    alice: participant('alice', 'alpha', { role: 'Facilitator', authed: true }),
+    stale: participant('stale', 'alpha', { role: 'Facilitator', authed: true })
+  };
+
+  normalizeFacilitators(rooms, participants, 'alpha');
+
+  assert.deepEqual(room.facilitatorIds, ['alice']);
+  assert.equal(participants.stale.role, 'Voter');
+});
+

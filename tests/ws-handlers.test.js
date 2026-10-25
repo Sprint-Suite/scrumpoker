@@ -11,7 +11,7 @@ const {
   handleStartNextRound,
   handleVote
 } = require('../lib/wsHandlers');
-const { joinRoom } = require('../lib/roomState');
+const { joinRoom, normalizeFacilitators } = require('../lib/roomState');
 const { ROLES } = require('../lib/roles');
 
 function createHarness(t) {
@@ -97,7 +97,7 @@ test('handleLogin creates participants and downgrades duplicate facilitator requ
   });
 
   const roomName = 'co1-planning';
-  assert.equal(harness.rooms.get(roomName).facilitatorId, 'alice');
+  assert.deepEqual(harness.rooms.get(roomName).facilitatorIds, ['alice']);
   assert.equal(harness.participants.alice.role, ROLES.FACILITATOR);
   assert.equal(harness.participants.bob.role, ROLES.VOTER);
   assert.deepEqual(harness.roomStates, [roomName, roomName]);
@@ -234,7 +234,7 @@ test('handleChangeRole enforces facilitator-only changes to other users', (t) =>
   const roomName = 'planning-key';
   const room = joinRoom(harness.rooms, roomName, 'alice', 100);
   joinRoom(harness.rooms, roomName, 'bob', 100);
-  room.facilitatorId = 'alice';
+  room.facilitatorIds = ['alice'];
   harness.participants.alice = participant('alice', roomName, { role: ROLES.FACILITATOR, authed: true });
   harness.participants.bob = participant('bob', roomName, { authed: true });
 
@@ -253,9 +253,9 @@ test('handleChangeRole enforces facilitator-only changes to other users', (t) =>
   });
 
   assert.equal(harness.clientMessages[0].message.payload.message, 'Only Facilitator can change others’ roles.');
-  assert.equal(harness.participants.alice.role, ROLES.VOTER);
+  assert.equal(harness.participants.alice.role, ROLES.FACILITATOR, 'granting does not demote the granter');
   assert.equal(harness.participants.bob.role, ROLES.FACILITATOR);
-  assert.equal(room.facilitatorId, 'bob');
+  assert.deepEqual(room.facilitatorIds, ['alice', 'bob']);
   assert.deepEqual(harness.roomStates, [roomName]);
 });
 
@@ -264,7 +264,7 @@ test('handleChangeRole hands the facilitator role on when one steps down', (t) =
   const roomName = 'planning-key';
   const room = joinRoom(harness.rooms, roomName, 'alice', 100);
   joinRoom(harness.rooms, roomName, 'bob', 100);
-  room.facilitatorId = 'alice';
+  room.facilitatorIds = ['alice'];
   harness.participants.alice = participant('alice', roomName, { role: ROLES.FACILITATOR });
   harness.participants.bob = participant('bob', roomName);
 
@@ -277,7 +277,7 @@ test('handleChangeRole hands the facilitator role on when one steps down', (t) =
 
   assert.equal(harness.participants.alice.role, ROLES.VOTER);
   assert.equal(harness.participants.bob.role, ROLES.FACILITATOR);
-  assert.equal(room.facilitatorId, 'bob');
+  assert.deepEqual(room.facilitatorIds, ['bob']);
   assert.deepEqual(harness.roomStates, [roomName]);
 });
 
@@ -285,7 +285,7 @@ test('handleChangeRole blocks the only facilitator from stepping down', (t) => {
   const harness = createHarness(t);
   const roomName = 'planning-key';
   const room = joinRoom(harness.rooms, roomName, 'alice', 100);
-  room.facilitatorId = 'alice';
+  room.facilitatorIds = ['alice'];
   harness.participants.alice = participant('alice', roomName, { role: ROLES.FACILITATOR });
 
   handleChangeRole({
@@ -300,7 +300,7 @@ test('handleChangeRole blocks the only facilitator from stepping down', (t) => {
     'Assign another facilitator before leaving the facilitator role.'
   );
   assert.equal(harness.participants.alice.role, ROLES.FACILITATOR);
-  assert.equal(room.facilitatorId, 'alice');
+  assert.deepEqual(room.facilitatorIds, ['alice']);
   assert.deepEqual(harness.roomStates, []);
 });
 
@@ -309,7 +309,7 @@ test('handleEndSession clears a room after notifying participants', (t) => {
   const roomName = 'planning-key';
   const room = joinRoom(harness.rooms, roomName, 'alice', 100);
   joinRoom(harness.rooms, roomName, 'bob', 100);
-  room.facilitatorId = 'alice';
+  room.facilitatorIds = ['alice'];
   harness.participants.alice = participant('alice', roomName, { role: ROLES.FACILITATOR });
   harness.participants.bob = participant('bob', roomName);
 
@@ -347,7 +347,7 @@ test('handleParticipantExit removes participants and reassigns facilitator', (t)
   const roomName = 'planning-key';
   const room = joinRoom(harness.rooms, roomName, 'alice', 100);
   joinRoom(harness.rooms, roomName, 'bob', 100);
-  room.facilitatorId = 'alice';
+  room.facilitatorIds = ['alice'];
   harness.participants.alice = participant('alice', roomName, { role: ROLES.FACILITATOR, authed: true });
   harness.participants.bob = participant('bob', roomName, { authed: true });
 
@@ -358,7 +358,7 @@ test('handleParticipantExit removes participants and reassigns facilitator', (t)
 
   assert.equal(harness.participants.alice, undefined);
   assert.equal(harness.participants.bob.role, ROLES.FACILITATOR);
-  assert.equal(room.facilitatorId, 'bob');
+  assert.deepEqual(room.facilitatorIds, ['bob']);
   assert.deepEqual(harness.roomStates, [roomName]);
 });
 
@@ -399,13 +399,13 @@ test('authed login is company-scoped and ignores teamId', (t) => {
 
 test('anonymous login forces Voter, ignores requested role/room, binds to ws.anonRoom', (t) => {
   const harness = createHarness(t);
-  harness.rooms.set('co1-planning', { users: new Set(), lastActive: Date.now(), votesRevealed: false, facilitatorId: null, shareToken: 'tok', displayName: 'planning' });
+  harness.rooms.set('co1-planning', { users: new Set(), lastActive: Date.now(), votesRevealed: false, facilitatorIds: [], shareToken: 'tok', displayName: 'planning' });
   const ws = { userId: 'bob', authed: false, anonRoom: 'co1-planning', anonToken: 'tok' };
   handleLogin({ ws, userId: 'bob', payload: { name: 'Bob', role: ROLES.FACILITATOR, room: 'evil-room' }, rooms: harness.rooms, participants: harness.participants, sendToClient: harness.sendToClient, sendRoomState: harness.sendRoomState });
   assert.equal(harness.participants.bob.roomName, 'co1-planning');
   assert.equal(harness.participants.bob.role, ROLES.VOTER);
   assert.equal(harness.participants.bob.authed, false);
-  assert.notEqual(harness.rooms.get('co1-planning').facilitatorId, 'bob');
+  assert.ok(!harness.rooms.get('co1-planning').facilitatorIds.includes('bob'));
   assert.equal(harness.rooms.get('co1-planning').displayName, 'planning');
 });
 
@@ -427,23 +427,23 @@ test('anonymous login to a missing room errors (closed/invalid link)', (t) => {
 
 test('changeRole cannot promote an anonymous participant to Facilitator', (t) => {
   const harness = createHarness(t);
-  harness.rooms.set('co1-r', { users: new Set(['fac', 'anon']), lastActive: Date.now(), votesRevealed: false, facilitatorId: 'fac', shareToken: 'tok' });
+  harness.rooms.set('co1-r', { users: new Set(['fac', 'anon']), lastActive: Date.now(), votesRevealed: false, facilitatorIds: ['fac'], shareToken: 'tok' });
   harness.participants.fac = { id: 'fac', ws: { userId: 'fac' }, name: 'Fac', role: ROLES.FACILITATOR, vote: null, roomName: 'co1-r', authed: true };
   harness.participants.anon = { id: 'anon', ws: { userId: 'anon' }, name: 'Anon', role: ROLES.VOTER, vote: null, roomName: 'co1-r', authed: false };
   handleChangeRole({ ws: harness.participants.fac.ws, currentUser: harness.participants.fac, payload: { targetUserId: 'anon', newRole: ROLES.FACILITATOR }, participants: harness.participants, rooms: harness.rooms, sendToClient: harness.sendToClient, sendRoomState: harness.sendRoomState });
   assert.equal(harness.participants.anon.role, ROLES.VOTER);
-  assert.equal(harness.rooms.get('co1-r').facilitatorId, 'fac');
+  assert.deepEqual(harness.rooms.get('co1-r').facilitatorIds, ['fac']);
   assert.match(harness.clientMessages.at(-1).message.payload.message, /facilitator/i);
 });
 
 test('changeRole step-down will not hand facilitation to an anonymous member', (t) => {
   const harness = createHarness(t);
-  harness.rooms.set('co1-r', { users: new Set(['fac', 'anon']), lastActive: Date.now(), votesRevealed: false, facilitatorId: 'fac', shareToken: 'tok' });
+  harness.rooms.set('co1-r', { users: new Set(['fac', 'anon']), lastActive: Date.now(), votesRevealed: false, facilitatorIds: ['fac'], shareToken: 'tok' });
   harness.participants.fac = { id: 'fac', ws: { userId: 'fac' }, name: 'Fac', role: ROLES.FACILITATOR, vote: null, roomName: 'co1-r', authed: true };
   harness.participants.anon = { id: 'anon', ws: { userId: 'anon' }, name: 'Anon', role: ROLES.VOTER, vote: null, roomName: 'co1-r', authed: false };
   handleChangeRole({ ws: harness.participants.fac.ws, currentUser: harness.participants.fac, payload: { targetUserId: 'fac', newRole: ROLES.VOTER }, participants: harness.participants, rooms: harness.rooms, sendToClient: harness.sendToClient, sendRoomState: harness.sendRoomState });
   assert.equal(harness.participants.anon.role, ROLES.VOTER);
-  assert.equal(harness.rooms.get('co1-r').facilitatorId, 'fac');
+  assert.deepEqual(harness.rooms.get('co1-r').facilitatorIds, ['fac']);
   assert.match(harness.clientMessages.at(-1).message.payload.message, /assign another facilitator/i);
 });
 
@@ -456,7 +456,7 @@ test('handleLogin for a second room leaves the first room and hands facilitation
 
   const planning = h.rooms.get('co1-planning');
   assert.equal(planning.users.has('alice'), false);
-  assert.equal(planning.facilitatorId, 'bob');
+  assert.deepEqual(planning.facilitatorIds, ['bob']);
   assert.equal(h.participants.bob.role, ROLES.FACILITATOR);
   assert.equal(h.participants.alice.roomName, 'co1-retro');
   assert.deepEqual(h.roomStates.slice(-2), ['co1-planning', 'co1-retro']);
@@ -469,7 +469,7 @@ test('a rejected second login leaves the user where they were', (t) => {
   handleLogin({ ...h, ws: wsWith('alice'), userId: 'alice', payload: loginPayload({ name: 'Alice', role: 'Owner', room: 'retro' }) });
 
   assert.equal(h.rooms.get('co1-planning').users.has('alice'), true);
-  assert.equal(h.rooms.get('co1-planning').facilitatorId, 'alice');
+  assert.deepEqual(h.rooms.get('co1-planning').facilitatorIds, ['alice']);
   assert.equal(h.participants.alice.roomName, 'co1-planning');
   assert.equal(h.rooms.has('co1-retro'), false);
 });
@@ -509,7 +509,7 @@ test('a guest is refused once their room is recreated under a new token', (t) =>
 
 test('a guest socket without a token is refused', (t) => {
   const h = createHarness(t);
-  h.rooms.set('co1-planning', { users: new Set(), lastActive: Date.now(), votesRevealed: false, facilitatorId: null, shareToken: undefined });
+  h.rooms.set('co1-planning', { users: new Set(), lastActive: Date.now(), votesRevealed: false, facilitatorIds: [], shareToken: undefined });
   const guestWs = { userId: 'guest', authed: false, anonRoom: 'co1-planning' };
 
   handleLogin({ ...h, ws: guestWs, userId: 'guest', payload: { name: 'Guest' } });
@@ -530,3 +530,102 @@ test('a guest re-sending login with a valid token stays in the room', (t) => {
   assert.equal(h.participants.guest.roomName, roomName);
   assert.equal(h.rooms.get(roomName).users.has('guest'), true);
 });
+
+function coFacilitatorRoom(t, { facilitators = ['alice'], members = ['alice', 'bob', 'carol'] } = {}) {
+  const h = createHarness(t);
+  const roomName = 'co1-planning';
+  members.forEach((id) => joinRoom(h.rooms, roomName, id, 100));
+  const room = h.rooms.get(roomName);
+  room.facilitatorIds = [...facilitators];
+  members.forEach((id) => {
+    h.participants[id] = participant(id, roomName, { role: facilitators.includes(id) ? ROLES.FACILITATOR : ROLES.VOTER });
+  });
+  const changeRole = (actor, payload) => handleChangeRole({
+    ...h, ws: h.participants[actor].ws, currentUser: h.participants[actor], payload
+  });
+  return { h, room, roomName, changeRole };
+}
+
+test('a third facilitator is refused and nothing changes', (t) => {
+  const { h, room, changeRole } = coFacilitatorRoom(t, { facilitators: ['alice', 'bob'] });
+  changeRole('alice', { targetUserId: 'carol', newRole: ROLES.FACILITATOR });
+  assert.equal(h.clientMessages.at(-1).message.payload.message, 'A room can have at most two facilitators.');
+  assert.deepEqual(room.facilitatorIds, ['alice', 'bob']);
+  assert.equal(h.participants.carol.role, ROLES.VOTER);
+  assert.deepEqual(h.roomStates, []);
+});
+
+for (const selfRole of [ROLES.VOTER, ROLES.OBSERVER]) {
+  for (const facilitators of [['alice'], ['alice', 'bob']]) {
+    test(`a ${selfRole} cannot promote themselves (${facilitators.length} facilitator(s) present)`, (t) => {
+      const { h, room, changeRole } = coFacilitatorRoom(t, { facilitators });
+      h.participants.carol.role = selfRole;
+      changeRole('carol', { newRole: ROLES.FACILITATOR });
+      assert.equal(h.clientMessages.at(-1).message.payload.message, 'Only a Facilitator can grant the Facilitator role.');
+      assert.equal(h.participants.carol.role, selfRole);
+      assert.equal(h.participants.alice.role, ROLES.FACILITATOR);
+      assert.deepEqual(room.facilitatorIds, facilitators);
+      assert.deepEqual(h.roomStates, []);
+    });
+  }
+}
+
+test('members can still switch themselves between Voter and Observer', (t) => {
+  const { h, changeRole } = coFacilitatorRoom(t);
+  changeRole('carol', { newRole: ROLES.OBSERVER });
+  assert.equal(h.participants.carol.role, ROLES.OBSERVER);
+  changeRole('carol', { newRole: ROLES.VOTER });
+  assert.equal(h.participants.carol.role, ROLES.VOTER);
+});
+
+test('a facilitator with a co-facilitator steps down without a handover', (t) => {
+  const { h, room, changeRole } = coFacilitatorRoom(t, { facilitators: ['alice', 'bob'] });
+  changeRole('alice', { newRole: ROLES.OBSERVER });
+  assert.deepEqual(room.facilitatorIds, ['bob']);
+  assert.equal(h.participants.alice.role, ROLES.OBSERVER);
+  assert.equal(h.participants.carol.role, ROLES.VOTER);
+});
+
+test('a facilitator can demote the other, who immediately loses facilitator powers', (t) => {
+  const { h, room, roomName, changeRole } = coFacilitatorRoom(t, { facilitators: ['alice', 'bob'] });
+  changeRole('alice', { targetUserId: 'bob', newRole: ROLES.VOTER });
+  assert.deepEqual(room.facilitatorIds, ['alice']);
+  assert.equal(h.participants.bob.role, ROLES.VOTER);
+
+  handleRevealVotes({ ...h, ws: h.participants.bob.ws, currentUser: h.participants.bob });
+  assert.equal(h.rooms.get(roomName).votesRevealed, false);
+});
+
+test('the last facilitator stepping down hands over to someone else', (t) => {
+  const { h, room, changeRole } = coFacilitatorRoom(t, { members: ['alice', 'bob'] });
+  changeRole('alice', { newRole: ROLES.VOTER });
+  assert.deepEqual(room.facilitatorIds, ['bob']);
+  assert.equal(h.participants.alice.role, ROLES.VOTER);
+  assert.equal(h.participants.bob.role, ROLES.FACILITATOR);
+});
+
+test('a facilitator who leaves keeps their co-facilitator in place', (t) => {
+  const { h, room } = coFacilitatorRoom(t, { facilitators: ['alice', 'bob'] });
+  handleParticipantExit({ userId: 'alice', participants: h.participants, rooms: h.rooms, sendRoomState: h.sendRoomState });
+  assert.deepEqual(room.facilitatorIds, ['bob']);
+  assert.equal(h.participants.carol.role, ROLES.VOTER);
+});
+
+test('a co-facilitator who logs into another room leaves the first room\'s list', (t) => {
+  const { h, room } = coFacilitatorRoom(t, { facilitators: ['alice', 'bob'] });
+  h.participants.bob.ws = wsWith('bob');
+  handleLogin({ ...h, ws: h.participants.bob.ws, userId: 'bob', payload: loginPayload({ name: 'Bob', role: ROLES.VOTER, room: 'retro' }) });
+  assert.deepEqual(room.facilitatorIds, ['alice']);
+  assert.equal(h.participants.bob.roomName, 'co1-retro');
+});
+
+test('a stale facilitator outside room membership loses reveal once the list is normalised', (t) => {
+  const { h, roomName } = coFacilitatorRoom(t, { facilitators: ['alice'] });
+  h.participants.stale = participant('stale', roomName, { role: ROLES.FACILITATOR });
+  h.rooms.get(roomName).facilitatorIds.push('stale');
+  normalizeFacilitators(h.rooms, h.participants, roomName);
+
+  handleRevealVotes({ ...h, ws: h.participants.stale.ws, currentUser: h.participants.stale });
+  assert.equal(h.rooms.get(roomName).votesRevealed, false);
+});
+
