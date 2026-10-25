@@ -72,3 +72,27 @@ for (const [fg, bg] of LARGE_PAIRS) {
     );
   });
 }
+
+// --------------------------------------------------------------------------
+// HEADER BANNER — text over images/room-banner.webp (poker.css "Header band")
+// The .sub backing is 88% banner-base over the image's darkest pixel, so this
+// is the worst case anywhere a long room name can wrap.
+// --------------------------------------------------------------------------
+const BANNER_BASE = "#f3faf7";
+const BANNER_DARKEST = "#1c6f5a";
+const EYEBROW = "#216b63";
+
+function composite(topHex, bottomHex, alpha) {
+  const ch = (hex, i) => parseInt(hex.slice(1 + i * 2, 3 + i * 2), 16);
+  const mix = [0, 1, 2].map((i) => Math.round(alpha * ch(topHex, i) + (1 - alpha) * ch(bottomHex, i)));
+  return `#${mix.map((v) => v.toString(16).padStart(2, "0")).join("")}`;
+}
+
+test("banner: eyebrow on the banner base meets AA body text", () => {
+  assert.ok(meetsAA(EYEBROW, BANNER_BASE), `${contrastRatio(EYEBROW, BANNER_BASE).toFixed(2)}:1`);
+});
+
+test("banner: secondary text on the .sub backing meets AA over the darkest artwork", () => {
+  const backing = composite(BANNER_BASE, BANNER_DARKEST, 0.88);
+  assert.ok(meetsAA(INS.soft, backing), `${contrastRatio(INS.soft, backing).toFixed(2)}:1 on ${backing}`);
+});

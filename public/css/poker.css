@@ -163,6 +163,21 @@
 /* Hide the cardback img inside preview (CSS lattice replaces it) */
 .ins .preview-card-back img{display:none;}
 
+/* ── Header band ─────────────────────────────────────────────────────────── */
+
+/* Poker replaces the foundation's oscilloscope trace with a static banner.
+   Anchored left so narrow screens crop the decorative right-hand side. */
+.ins .band{
+  box-sizing:border-box; min-height:195px; display:flex; align-items:center;
+  background:#f3faf7 url('../images/room-banner.webp') no-repeat left center / cover;
+}
+.ins .band-in{width:100%;}
+.ins .band-in > *{max-width:560px;}
+/* Long room names can wrap across the artwork's dark curves; a pale backing keeps them legible. */
+.ins .band .sub{width:fit-content; max-width:100%; overflow-wrap:anywhere; padding:1px 6px; margin-left:-6px; border-radius:var(--r-sm); background:rgb(243 250 247 / 0.88);}
+.ins .band .sub:empty{display:none;}
+.ins .band .eyebrow{color:#216b63;}
+
 /* ── Planning room layout ────────────────────────────────────────────────── */
 
 .ins .room-shell{width:min(1180px, calc(100% - 2rem)); margin:2rem auto 5rem;}
