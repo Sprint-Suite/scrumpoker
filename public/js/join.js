@@ -95,6 +95,7 @@
 
         // Drop any prior socket so its onclose can't fire a second reconnect path.
         if (ws) { ws.onclose = null; ws.close(); }
+        everOpened = false;
         ws = new WebSocket(url);
 
         ws.onopen = () => {

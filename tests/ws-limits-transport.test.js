@@ -87,18 +87,43 @@ test('closing a socket frees its slot', async (t) => {
   again.ws.close();
 });
 
-test('a client that disconnects during auth releases its slot', async (t) => {
+function rawUpgrade(port) {
+  const raw = net.connect(port, '127.0.0.1');
+  raw.on('error', () => {});
+  raw.write('GET /ws HTTP/1.1\r\nHost: x\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n'
+    + 'Sec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\r\n');
+  return raw;
+}
+
+test('a client that disconnects during auth keeps its slot until auth settles', async (t) => {
   const gate = deferred();
   const { port, wsServer } = await startServer(t, { limits: { perIp: 1 }, verifySession: () => gate.promise });
 
-  const raw = net.connect(port, '127.0.0.1');
-  await new Promise((r) => raw.once('connect', r));
-  raw.write('GET /ws HTTP/1.1\r\nHost: x\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n'
-    + 'Sec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\r\n');
+  const raw = rawUpgrade(port);
   await until(() => wsServer.limitStats().open === 1);
   raw.destroy();
-  await until(() => wsServer.limitStats().open === 0);
+  await new Promise((r) => setTimeout(r, 50));
+  assert.equal(wsServer.limitStats().open, 1, 'the pending hub call still holds the slot');
+
   gate.resolve(SESSION);
+  await until(() => wsServer.limitStats().open === 0);
+});
+
+test('repeated disconnects during a hung auth cannot stack up auth calls past the cap', async (t) => {
+  let calls = 0;
+  const { port, wsServer } = await startServer(t, {
+    limits: { perIp: 2 },
+    verifySession: () => { calls += 1; return new Promise(() => {}); }
+  });
+
+  for (let i = 0; i < 2; i += 1) {
+    const raw = rawUpgrade(port);
+    await until(() => calls === i + 1);
+    raw.destroy();
+  }
+  assert.equal((await connect(port)).status, 429);
+  assert.equal(calls, 2);
+  assert.equal(wsServer.limitStats().open, 2);
 });
 
 test('an upgrade past its deadline is dropped, and a late auth result does not upgrade it', async (t) => {
@@ -107,12 +132,11 @@ test('an upgrade past its deadline is dropped, and a late auth result does not u
 
   const result = await connect(port);
   assert.ok(!result.ws, 'the socket never opens');
-  await until(() => wsServer.limitStats().open === 0);
+  assert.equal(wsServer.limitStats().open, 1, 'the slot is held while auth is still pending');
 
   gate.resolve(SESSION);
-  await new Promise((r) => setTimeout(r, 50));
+  await until(() => wsServer.limitStats().open === 0);
   assert.equal(wsServer.wss.clients.size, 0);
-  assert.equal(wsServer.limitStats().open, 0);
 });
 
 test('a malformed handshake releases its slot', async (t) => {
