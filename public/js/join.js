@@ -95,6 +95,7 @@
 
         // Drop any prior socket so its onclose can't fire a second reconnect path.
         if (ws) { ws.onclose = null; ws.close(); }
+        everOpened = false;
         ws = new WebSocket(url);
 
         ws.onopen = () => {
@@ -116,20 +117,19 @@
             updateConnectionStatus('disconnected', 'Connection error');
         };
 
-        ws.onclose = () => {
+        ws.onclose = (event) => {
             if (ended) return;
-            if (!everOpened) {
-                updateConnectionStatus('disconnected', 'Disconnected');
-                showJoinSection();
-                showJoinError('This room has closed or the link is invalid.');
-                joinButton.disabled = false;
-                return;
-            }
             updateConnectionStatus('disconnected', 'Disconnected');
-            // Show disconnected state — stay on current view, allow re-entry via button
             showJoinSection();
-            showJoinError('Disconnected. Please try rejoining.');
             joinButton.disabled = false;
+            if (!everOpened) {
+                // A refused upgrade could be a closed room or a busy server; the page cannot tell which.
+                showJoinError('This room may have closed, or the server is busy. Try again in a moment.');
+            } else if (event.code === 1008) {
+                showJoinError('Disconnected for sending too many messages. Please try rejoining.');
+            } else {
+                showJoinError('Disconnected. Please try rejoining.');
+            }
         };
     }
 
