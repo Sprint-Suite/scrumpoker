@@ -33,33 +33,48 @@
         };
     }
 
-    // Reconnects with backoff until the retry window runs out, then gives up.
-    function createReconnector({ reopen, onWait, onGiveUp, ...windowOptions }) {
-        const retry = createRetryWindow(windowOptions);
+    // Reconnects with backoff. A deadline armed by the first begin() gives up
+    // even if a reopened socket never opens and never closes.
+    function createReconnector(options) {
+        const { reopen, onWait, onGiveUp, windowMs = 120000, now } = options;
+        const setTimer = options.setTimer || ((fn, ms) => setTimeout(fn, ms));
+        const clearTimer = options.clearTimer || ((id) => clearTimeout(id));
+        const retry = createRetryWindow({ windowMs, now });
         const backoff = window.ScrumPokerReconnect.createBackoff({ baseMs: 1000, maxMs: 15000 });
         let active = false;
         let timer = null;
+        let deadline = null;
 
         function stop() {
             active = false;
             retry.stop();
             backoff.reset();
-            clearTimeout(timer);
+            clearTimer(timer);
+            clearTimer(deadline);
+        }
+
+        function giveUp() {
+            if (!active) return;
+            stop();
+            onGiveUp();
+        }
+
+        function begin() {
+            if (active) return;
+            active = true;
+            retry.start();
+            deadline = setTimer(giveUp, windowMs);
         }
 
         function schedule() {
-            if (retry.expired()) return onGiveUp();
+            if (!active) return;
+            if (retry.expired()) return giveUp();
             onWait();
-            clearTimeout(timer);
-            timer = setTimeout(reopen, backoff.next());
+            clearTimer(timer);
+            timer = setTimer(reopen, backoff.next());
         }
 
-        return {
-            begin() { active = true; retry.start(); },
-            active: () => active,
-            schedule,
-            stop
-        };
+        return { begin, active: () => active, schedule, stop };
     }
 
     window.ScrumPokerGuestSession = { load, save, clear, createRetryWindow, createReconnector };

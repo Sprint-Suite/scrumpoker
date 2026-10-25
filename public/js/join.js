@@ -56,7 +56,10 @@
     const reconnector = guestSession.createReconnector({
         reopen: () => openWebSocket(guestName),
         onWait: () => updateConnectionStatus('disconnected', 'Reconnecting...'),
-        onGiveUp: () => backToJoin(CLOSED_OR_BUSY)
+        onGiveUp: () => {
+            detachSocket();
+            backToJoin(CLOSED_OR_BUSY);
+        }
     });
 
     // --- Read token from URL ---
@@ -107,12 +110,32 @@
     }
 
     // Every way back to the join form also forgets the stored session.
-    function backToJoin(message) {
+    function backToJoin(message, { forgetKey = false } = {}) {
+        if (forgetKey) rejoinKey = null;
         reconnector.stop();
         guestSession.clear(sessionStorage);
         showJoinSection();
         showJoinError(message);
         joinButton.disabled = false;
+    }
+
+    function detachSocket() {
+        if (!ws) return;
+        ws.onopen = ws.onmessage = ws.onerror = ws.onclose = null;
+        ws.close();
+    }
+
+    function handleClose(event) {
+        if (ended) return;
+        if (event.code === 1008) {
+            updateConnectionStatus('disconnected', 'Disconnected');
+            return backToJoin('Disconnected for sending too many messages. Please try rejoining.');
+        }
+        if (!pokerRoomSection.classList.contains('hidden')) reconnector.begin();
+        if (reconnector.active()) return reconnector.schedule();
+        updateConnectionStatus('disconnected', 'Disconnected');
+        // A refused upgrade could be a closed room or a busy server; the page cannot tell which.
+        backToJoin(everOpened ? 'Disconnected. Please try rejoining.' : CLOSED_OR_BUSY);
     }
 
     function showConnecting() {
@@ -129,8 +152,7 @@
         guestName = name;
         ended = false;
 
-        // Drop any prior socket so its onclose can't fire a second reconnect path.
-        if (ws) { ws.onclose = null; ws.close(); }
+        detachSocket();
         everOpened = false;
         ws = new WebSocket(url);
 
@@ -142,28 +164,15 @@
 
         ws.onmessage = (event) => {
             try {
-                const message = JSON.parse(event.data);
-                handleServerMessage(message);
+                handleServerMessage(JSON.parse(event.data));
             } catch (err) {
                 console.error('Failed to parse server message:', event.data, err);
             }
         };
 
-        ws.onerror = () => {
-            updateConnectionStatus('disconnected', 'Connection error');
-        };
+        ws.onerror = () => updateConnectionStatus('disconnected', 'Connection error');
 
-        ws.onclose = (event) => {
-            if (ended) return;
-            if (event.code === 4000) return onReplaced();
-            if (event.code !== 1008 && !pokerRoomSection.classList.contains('hidden')) reconnector.begin();
-            if (reconnector.active()) return reconnector.schedule();
-            updateConnectionStatus('disconnected', 'Disconnected');
-            // A refused upgrade could be a closed room or a busy server; the page cannot tell which.
-            if (!everOpened) backToJoin(CLOSED_OR_BUSY);
-            else if (event.code === 1008) backToJoin('Disconnected for sending too many messages. Please try rejoining.');
-            else backToJoin('Disconnected. Please try rejoining.');
-        };
+        ws.onclose = handleClose;
     }
 
     // --- Server Message Handler ---
@@ -196,7 +205,7 @@
         const errorMessage = payload?.message || 'Something went wrong.';
         console.error('Server error:', errorMessage);
         if (/closed|invalid|expired/i.test(errorMessage)) {
-            backToJoin(errorMessage);
+            backToJoin(errorMessage, { forgetKey: true });
             return;
         }
         renderParticipantsList();
@@ -210,14 +219,14 @@
 
     function onReplaced() {
         ended = true;
-        backToJoin('This session continued in another tab or window.');
+        backToJoin('This session continued in another tab or window.', { forgetKey: true });
     }
 
     function onSessionEnded(payload) {
         ended = true;
         if (ws) ws.close();
         updateConnectionStatus('disconnected', 'Session ended');
-        backToJoin(payload?.message || 'The facilitator ended this session.');
+        backToJoin(payload?.message || 'The facilitator ended this session.', { forgetKey: true });
         joinButton.disabled = true;
     }
 

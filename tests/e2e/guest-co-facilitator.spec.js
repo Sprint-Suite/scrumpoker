@@ -132,3 +132,26 @@ test('a refresh into a room that has closed shows the join form with the closed-
     await Promise.all([member.context.close(), guest.context.close()]);
   }
 });
+
+test('after being replaced, a manual Join is a new guest and does not displace the newer tab', async ({ browser }) => {
+  seedSession({ id: 's-gcf-rejoin', userId: 'u-gcf-rejoin' });
+  const member = await openRoomAsMember(browser, 's-gcf-rejoin', 'guest-cf-rejoin');
+  const guest = await joinAsGuest(browser, member.token);
+  try {
+    const stored = await guest.page.evaluate(() => sessionStorage.getItem('scrumPokerGuest'));
+    const newer = await guest.context.newPage();
+    await newer.addInitScript((value) => sessionStorage.setItem('scrumPokerGuest', value), stored);
+    await newer.goto(`/join?token=${member.token}`);
+    await expect(newer.locator('#poker-room-section')).toBeVisible();
+    await expect(guest.page.locator('#join-error')).toHaveText('This session continued in another tab or window.');
+
+    await guest.page.fill('#join-name-input', 'Guest2');
+    await guest.page.click('#join-button');
+    await expect(guest.page.locator('#poker-room-section')).toBeVisible();
+    await expect(member.page.locator('.participant-row').filter({ hasText: 'Guest' })).toHaveCount(2);
+    await expect(newer.locator('#join-error')).toBeHidden();
+    await expect(newer.locator('#poker-room-section')).toBeVisible();
+  } finally {
+    await Promise.all([member.context.close(), guest.context.close()]);
+  }
+});
