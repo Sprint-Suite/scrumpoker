@@ -13,8 +13,26 @@ function attachErrorListeners(page) {
   return errs;
 }
 
-test.describe("oscilloscope band", () => {
-  test("entry screen (index.html #login-section) has a band with mounted svg", async ({ page, context }) => {
+async function expectBanner(band) {
+  await expect(band).toBeVisible();
+  await expect(band.locator(".waves")).toHaveCount(0);
+  const image = await band.evaluate((el) => getComputedStyle(el).backgroundImage);
+  expect(image).toContain("/images/room-banner.webp");
+  // Text that can wrap over the artwork carries an opaque-enough backing.
+  for (const sub of await band.locator(".sub:not(:empty)").all()) {
+    const bg = await sub.evaluate((el) => getComputedStyle(el).backgroundColor);
+    expect(bg).not.toBe("rgba(0, 0, 0, 0)");
+  }
+}
+
+test.describe("header banner", () => {
+  test("banner image is served", async ({ request }) => {
+    const res = await request.get("/images/room-banner.webp");
+    expect(res.status()).toBe(200);
+    expect(res.headers()["content-type"]).toBe("image/webp");
+  });
+
+  test("entry screen (index.html #login-section) shows the banner", async ({ page, context }) => {
     const errs = attachErrorListeners(page);
 
     seedSession();
@@ -24,15 +42,12 @@ test.describe("oscilloscope band", () => {
     // Entry screen is visible before joining a room.
     await expect(page.locator("#login-section")).toBeVisible();
 
-    const band = page.locator("#login-section .band").first();
-    await expect(band).toBeVisible();
-    // The oscilloscope module mounts an <svg> into each empty .waves div after load.
-    await expect.poll(async () => band.locator(".waves svg").count()).toBeGreaterThan(0);
+    await expectBanner(page.locator("#login-section .band").first());
 
     expect(errs).toEqual([]);
   });
 
-  test("room section (index.html #poker-room-section) has a band with mounted svg after joining", async ({ page, context }) => {
+  test("room section (index.html #poker-room-section) shows the banner after joining", async ({ page, context }) => {
     const errs = attachErrorListeners(page);
 
     seedSession();
@@ -48,14 +63,12 @@ test.describe("oscilloscope band", () => {
 
     await expect(page.locator("#poker-room-section")).toBeVisible();
 
-    const band = page.locator("#poker-room-section .band").first();
-    await expect(band).toBeVisible();
-    await expect.poll(async () => band.locator(".waves svg").count()).toBeGreaterThan(0);
+    await expectBanner(page.locator("#poker-room-section .band").first());
 
     expect(errs).toEqual([]);
   });
 
-  test("anonymous join entry (join.html #join-section) has NO band; room has a band after joining", async ({ page, context, browser }) => {
+  test("anonymous join entry (join.html #join-section) has NO band; room shows the banner after joining", async ({ page, context, browser }) => {
     const errs = attachErrorListeners(page);
 
     // Set up a room with a share token via an authenticated facilitator.
@@ -84,7 +97,7 @@ test.describe("oscilloscope band", () => {
     try {
       await anon.goto(`/join?token=${token}`);
 
-      // The join entry screen has no band — it's a focused card, not an oscilloscope surface.
+      // The join entry screen has no band — it's a focused card.
       await expect(anon.locator("#join-section")).toBeVisible();
       await expect(anon.locator("#join-section .band")).toHaveCount(0);
 
@@ -93,10 +106,7 @@ test.describe("oscilloscope band", () => {
       await anon.click("#join-button");
       await expect(anon.locator("#poker-room-section")).toBeVisible();
 
-      // The room section in join.html DOES have a band with a mounted svg.
-      const anonRoomBand = anon.locator("#poker-room-section .band").first();
-      await expect(anonRoomBand).toBeVisible();
-      await expect.poll(async () => anonRoomBand.locator(".waves svg").count()).toBeGreaterThan(0);
+      await expectBanner(anon.locator("#poker-room-section .band").first());
 
       expect(anonErrs).toEqual([]);
     } finally {
@@ -105,4 +115,24 @@ test.describe("oscilloscope band", () => {
 
     expect(errs).toEqual([]);
   });
+
+  for (const width of [375, 1440]) {
+    test(`an unbroken 200-character room name wraps inside its backing at ${width}px`, async ({ page, context }) => {
+      await page.setViewportSize({ width, height: 800 });
+      seedSession();
+      await injectSession(context);
+      await page.goto("/");
+
+      await page.locator("#room-input").fill("W".repeat(200));
+      await page.locator("#name-input").fill("Alice");
+      await page.locator("#role-select").selectOption("Facilitator");
+      await page.locator("#login-button").click();
+      await expect(page.locator("#poker-room-section")).toBeVisible();
+
+      const room = page.locator("#room-display");
+      await expect(room).toContainText("WWWW");
+      const fits = await room.evaluate((el) => el.scrollWidth <= el.clientWidth);
+      expect(fits).toBe(true);
+    });
+  }
 });

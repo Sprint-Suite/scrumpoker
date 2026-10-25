@@ -139,8 +139,10 @@ hub-written SQLite file it only reads.
 
 - Static files in `public/`: `index.html`, `join.html` (anonymous share-link
   entry), `license.html`, plus `js/app.js` (~1k lines), `js/join.js`,
-  `js/cardDeck.js`, `js/clipboard.js`, `js/oscilloscope.js`, and
-  `css/poker.css` + `css/instrument-core.css` (the synced Instrument theme).
+  `js/cardDeck.js`, `js/clipboard.js`, and `css/poker.css` +
+  `css/instrument-core.css` (the synced Instrument theme). `js/oscilloscope.js`
+  is synced but not loaded: poker's header band uses the static
+  `images/room-banner.webp` instead of the animated trace.
   `admin.html` / `js/admin.js` were removed with the admin surface.
 - No framework, no build step. All JS is external (CSP forbids inline).
 - `robots.txt` + `sitemap.xml` present.
