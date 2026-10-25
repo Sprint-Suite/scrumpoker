@@ -16,6 +16,7 @@ const SCHEMAS = {
     name: z.string().min(1).max(80),
     role: z.enum(ROLE_VALUES).optional(),
     room: z.string().min(1).max(200).optional(),
+    rejoinKey: z.string().regex(/^[0-9a-f]{32}$/).optional(),
   }),
 
   // vote: carry a single vote value from the allowed deck.

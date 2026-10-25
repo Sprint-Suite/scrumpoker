@@ -399,7 +399,7 @@ test('authed login is company-scoped and ignores teamId', (t) => {
 
 test('anonymous login forces Voter, ignores requested role/room, binds to ws.anonRoom', (t) => {
   const harness = createHarness(t);
-  harness.rooms.set('co1-planning', { users: new Set(), lastActive: Date.now(), votesRevealed: false, facilitatorIds: [], shareToken: 'tok', displayName: 'planning' });
+  harness.rooms.set('co1-planning', { users: new Set(), lastActive: Date.now(), votesRevealed: false, facilitatorIds: [], guestKeys: new Map(), holds: new Map(), shareToken: 'tok', displayName: 'planning' });
   const ws = { userId: 'bob', authed: false, anonRoom: 'co1-planning', anonToken: 'tok' };
   handleLogin({ ws, userId: 'bob', payload: { name: 'Bob', role: ROLES.FACILITATOR, room: 'evil-room' }, rooms: harness.rooms, participants: harness.participants, sendToClient: harness.sendToClient, sendRoomState: harness.sendRoomState });
   assert.equal(harness.participants.bob.roomName, 'co1-planning');
@@ -674,4 +674,137 @@ test('the last member facilitator leaving a guest-only room promotes no one', (t
   assert.deepEqual(h.rooms.get(roomName).facilitatorIds, []);
   assert.equal(h.participants.g1.role, ROLES.VOTER);
   assert.equal(h.participants.g2.role, ROLES.VOTER);
+});
+
+// --- guest rejoin keys ---
+
+const T0 = 1000000;
+
+function guestRoom(t, { facilitators = [] } = {}) {
+  const h = createHarness(t);
+  const roomName = 'co1-planning';
+  joinRoom(h.rooms, roomName, 'host');
+  h.participants.host = participant('host', roomName);
+  const room = h.rooms.get(roomName);
+  room.facilitatorIds = ['host'];
+  normalizeFacilitators(h.rooms, h.participants, roomName);
+  const connect = (userId, payload = {}, now = T0) => {
+    const ws = { userId, authed: false, anonRoom: roomName, anonToken: room.shareToken };
+    handleLogin({ ...h, ws, userId, payload: { name: userId, ...payload }, now });
+    return ws;
+  };
+  const exit = (userId, now = T0) =>
+    handleParticipantExit({ userId, participants: h.participants, rooms: h.rooms, sendRoomState: h.sendRoomState, now });
+  const lastKey = () => {
+    const last = h.clientMessages.at(-1).message;
+    assert.equal(last.type, 'rejoinKey');
+    return last.payload.key;
+  };
+  const grant = (userId) => {
+    room.facilitatorIds = [...room.facilitatorIds, userId];
+    normalizeFacilitators(h.rooms, h.participants, roomName);
+  };
+  return { h, room, roomName, connect, exit, lastKey, grant };
+}
+
+test('a guest login is sent a rejoin key and the key is not on the participant', (t) => {
+  const { h, connect, lastKey } = guestRoom(t);
+  connect('g1');
+  const key = lastKey();
+  assert.match(key, /^[0-9a-f]{32}$/);
+  assert.equal(Object.values(h.participants.g1).includes(key), false);
+  assert.equal(JSON.stringify(h.roomStates).includes(key), false);
+});
+
+test('a guest facilitator who leaves and rejoins with the key within two minutes is Facilitator again', (t) => {
+  const { h, room, connect, exit, lastKey, grant } = guestRoom(t);
+  connect('g1');
+  grant('g1');
+  const key = lastKey();
+  exit('g1');
+  connect('g2', { rejoinKey: key }, T0 + 119999);
+  assert.equal(h.participants.g2.role, ROLES.FACILITATOR);
+  assert.deepEqual(room.facilitatorIds, ['host', 'g2']);
+  assert.equal(lastKey(), key);
+});
+
+test('a rejoin after the hold expired, with a wrong key, or with a key from another room joins as Voter', (t) => {
+  const a = guestRoom(t);
+  a.connect('g1');
+  a.grant('g1');
+  const key = a.lastKey();
+  a.exit('g1');
+  a.connect('g2', { rejoinKey: key }, T0 + 120001);
+  assert.equal(a.h.participants.g2.role, ROLES.VOTER);
+  assert.notEqual(a.lastKey(), key);
+
+  a.connect('g3', { rejoinKey: 'f'.repeat(32) });
+  assert.equal(a.h.participants.g3.role, ROLES.VOTER);
+
+  const b = guestRoom(t);
+  b.connect('x', { rejoinKey: key });
+  assert.equal(b.h.participants.x.role, ROLES.VOTER);
+  assert.notEqual(b.lastKey(), key);
+});
+
+test('a held guest returning to a room with two facilitators joins as Voter', (t) => {
+  const { h, room, connect, exit, lastKey, grant } = guestRoom(t);
+  connect('g1');
+  grant('g1');
+  const key = lastKey();
+  exit('g1');
+  h.participants.bob = participant('bob', 'co1-planning');
+  joinRoom(h.rooms, 'co1-planning', 'bob');
+  grant('bob');
+  assert.equal(room.facilitatorIds.length, 2);
+  connect('g2', { rejoinKey: key });
+  assert.equal(h.participants.g2.role, ROLES.VOTER);
+  assert.deepEqual(room.facilitatorIds, ['host', 'bob']);
+});
+
+test('a member waiting when the guest facilitator drops is promoted, and the returning guest becomes second facilitator', (t) => {
+  const { h, room, roomName, connect, exit, lastKey } = guestRoom(t);
+  room.facilitatorIds = [];
+  h.participants.host.role = ROLES.VOTER;
+  connect('g1');
+  room.facilitatorIds = ['g1'];
+  normalizeFacilitators(h.rooms, h.participants, roomName);
+  const key = lastKey();
+  exit('g1');
+  assert.deepEqual(room.facilitatorIds, ['host']);
+  connect('g2', { rejoinKey: key });
+  assert.deepEqual(room.facilitatorIds, ['host', 'g2']);
+  assert.equal(h.participants.g2.role, ROLES.FACILITATOR);
+});
+
+test('a guest facilitator re-sending login on the same socket with its key stays Facilitator', (t) => {
+  const { h, room, connect, lastKey, grant } = guestRoom(t);
+  const ws = connect('g1');
+  grant('g1');
+  const key = lastKey();
+  handleLogin({ ...h, ws, userId: 'g1', payload: { name: 'g1', rejoinKey: key }, now: T0 + 5 });
+  assert.equal(h.participants.g1.role, ROLES.FACILITATOR);
+  assert.deepEqual(room.facilitatorIds, ['host', 'g1']);
+  assert.equal(lastKey(), key);
+});
+
+test('a rejoin accepted but never acknowledged still works with the same key', (t) => {
+  const { h, connect, exit, lastKey, grant } = guestRoom(t);
+  connect('g1');
+  grant('g1');
+  const key = lastKey();
+  exit('g1');
+  connect('g2', { rejoinKey: key }, T0 + 1000);
+  exit('g2', T0 + 2000);
+  connect('g3', { rejoinKey: key }, T0 + 3000);
+  assert.equal(h.participants.g3.role, ROLES.FACILITATOR);
+  assert.equal(lastKey(), key);
+});
+
+test('a non-facilitator guest who leaves leaves no hold', (t) => {
+  const { room, connect, exit } = guestRoom(t);
+  connect('g1');
+  exit('g1');
+  assert.equal(room.holds.size, 0);
+  assert.equal(room.guestKeys.size, 0);
 });
