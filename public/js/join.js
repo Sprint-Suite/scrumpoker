@@ -142,8 +142,9 @@
                 }
                 break;
 
-            case 'updateState':
+            case 'updateState': {
                 if (!payload) break;
+                const wasRevealedInRoom = votesRevealed && !pokerRoomSection.classList.contains('hidden');
                 participants = payload.participants || [];
                 votesRevealed = payload.votesRevealed || false;
 
@@ -154,9 +155,18 @@
                 if (currentUser) {
                     updateConnectionStatus('connected', 'Connected');
                     showRoomSection();
-                    updateUI();
+                    if (wasRevealedInRoom && !votesRevealed) {
+                        // Votes were reset: flip the old cards down, then deal the new round.
+                        cardAnimator.animateCardsFaceDownBeforeReset(() => {
+                            animateVotingCards = true;
+                            updateUI();
+                        });
+                    } else {
+                        updateUI();
+                    }
                 }
                 break;
+            }
 
             case 'error': {
                 const errorMessage = payload?.message || 'Something went wrong.';

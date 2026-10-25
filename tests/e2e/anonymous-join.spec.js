@@ -47,6 +47,12 @@ test('anonymous player joins via share link, votes, and cannot facilitate', asyn
     await expect(anon.locator('#average-vote')).toHaveText('8.0');
     await expect(anon.locator('#ordered-votes')).toBeVisible();
     await expectResultsInVoteColumn(anon);
+
+    // A reset flips the guest's cards face-down before the new round opens.
+    await page.click('#reset-votes-button');
+    await expect(anon.locator('.vote-card .card-inner.is-face-down').first()).toBeAttached();
+    await expect(anon.locator('#round-status')).toHaveText('Open');
+    await expect(anon.locator('button.vote-card.selected')).toHaveCount(0);
   } finally {
     await anonCtx.close();
   }
