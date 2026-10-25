@@ -115,12 +115,16 @@
         joinButton.disabled = false;
     }
 
+    function showConnecting() {
+        if (!reconnector.active()) updateConnectionStatus('connecting', 'Connecting...');
+    }
+
     // --- WebSocket ---
     function openWebSocket(name) {
         const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
         const url = `${protocol}//${location.host}/ws?token=${encodeURIComponent(token)}`;
 
-        updateConnectionStatus('connecting', 'Connecting...');
+        showConnecting();
         joinButton.disabled = true;
         guestName = name;
         ended = false;
@@ -132,7 +136,7 @@
 
         ws.onopen = () => {
             everOpened = true;
-            updateConnectionStatus('connecting', 'Connecting...');
+            showConnecting();
             ws.send(JSON.stringify({ type: 'login', payload: { name, rejoinKey: rejoinKey || undefined } }));
         };
 
@@ -151,7 +155,7 @@
 
         ws.onclose = (event) => {
             if (ended) return;
-            if (!pokerRoomSection.classList.contains('hidden')) reconnector.begin();
+            if (event.code !== 1008 && !pokerRoomSection.classList.contains('hidden')) reconnector.begin();
             if (reconnector.active()) return reconnector.schedule();
             updateConnectionStatus('disconnected', 'Disconnected');
             // A refused upgrade could be a closed room or a busy server; the page cannot tell which.
@@ -162,80 +166,69 @@
     }
 
     // --- Server Message Handler ---
-    function handleServerMessage(message) {
-        const { type, payload } = message;
+    function onUpdateState(payload) {
+        if (!payload) return;
+        const wasRevealedInRoom = votesRevealed && !pokerRoomSection.classList.contains('hidden');
+        participants = payload.participants || [];
+        votesRevealed = payload.votesRevealed || false;
+        roomName = payload.displayName || null;
+        facilitatorIds = payload.facilitatorIds || [];
+        shareToken = payload.shareToken || null;
+        if (myId) currentUser = participants.find(p => p.id === myId) || null;
+        if (!currentUser) return;
 
+        reconnector.stop();
+        updateConnectionStatus('connected', 'Connected');
+        showRoomSection();
+        if (wasRevealedInRoom && !votesRevealed) {
+            // Votes were reset: flip the old cards down, then deal the new round.
+            cardAnimator.animateCardsFaceDownBeforeReset(() => {
+                animateVotingCards = true;
+                updateUI();
+            });
+        } else {
+            updateUI();
+        }
+    }
+
+    function onError(payload) {
+        const errorMessage = payload?.message || 'Something went wrong.';
+        console.error('Server error:', errorMessage);
+        if (/closed|invalid|expired/i.test(errorMessage)) {
+            backToJoin(errorMessage);
+            return;
+        }
+        renderParticipantsList();
+        if (!controls.handleError(errorMessage)) showVoteError(errorMessage);
+    }
+
+    function onRejoinKey(payload) {
+        rejoinKey = payload.key;
+        guestSession.save(sessionStorage, { token, name: guestName, rejoinKey });
+    }
+
+    function onReplaced() {
+        ended = true;
+        backToJoin('This session continued in another tab or window.');
+    }
+
+    function onSessionEnded(payload) {
+        ended = true;
+        if (ws) ws.close();
+        updateConnectionStatus('disconnected', 'Session ended');
+        backToJoin(payload?.message || 'The facilitator ended this session.');
+        joinButton.disabled = true;
+    }
+
+    function handleServerMessage({ type, payload }) {
         switch (type) {
-            case 'yourId':
-                if (payload && payload.id) {
-                    myId = payload.id;
-                }
-                break;
-
-            case 'updateState': {
-                if (!payload) break;
-                const wasRevealedInRoom = votesRevealed && !pokerRoomSection.classList.contains('hidden');
-                participants = payload.participants || [];
-                votesRevealed = payload.votesRevealed || false;
-                roomName = payload.displayName || null;
-                facilitatorIds = payload.facilitatorIds || [];
-                shareToken = payload.shareToken || null;
-
-                if (myId) {
-                    currentUser = participants.find(p => p.id === myId) || null;
-                }
-
-                if (currentUser) {
-                    reconnector.stop();
-                    updateConnectionStatus('connected', 'Connected');
-                    showRoomSection();
-                    if (wasRevealedInRoom && !votesRevealed) {
-                        // Votes were reset: flip the old cards down, then deal the new round.
-                        cardAnimator.animateCardsFaceDownBeforeReset(() => {
-                            animateVotingCards = true;
-                            updateUI();
-                        });
-                    } else {
-                        updateUI();
-                    }
-                }
-                break;
-            }
-
-            case 'error': {
-                const errorMessage = payload?.message || 'Something went wrong.';
-                console.error('Server error:', errorMessage);
-                if (/closed|invalid|expired/i.test(errorMessage)) {
-                    // Fatal link/room error — show on entry screen
-                    backToJoin(errorMessage);
-                } else {
-                    renderParticipantsList();
-                    if (!controls.handleError(errorMessage)) showVoteError(errorMessage);
-                }
-                break;
-            }
-
-            case 'rejoinKey':
-                rejoinKey = payload.key;
-                guestSession.save(sessionStorage, { token, name: guestName, rejoinKey });
-                break;
-
-            case 'replaced':
-                ended = true;
-                backToJoin('This session continued in another tab or window.');
-                break;
-
-            case 'sessionEnded': {
-                ended = true;
-                if (ws) ws.close();
-                updateConnectionStatus('disconnected', 'Session ended');
-                backToJoin(payload?.message || 'The facilitator ended this session.');
-                joinButton.disabled = true;
-                break;
-            }
-
-            default:
-                break;
+            case 'yourId': if (payload && payload.id) myId = payload.id; break;
+            case 'updateState': onUpdateState(payload); break;
+            case 'error': onError(payload); break;
+            case 'rejoinKey': onRejoinKey(payload); break;
+            case 'replaced': onReplaced(); break;
+            case 'sessionEnded': onSessionEnded(payload); break;
+            default: break;
         }
     }
 
@@ -385,7 +378,6 @@
     if (saved) {
         rejoinKey = saved.rejoinKey;
         joinSection.classList.add('hidden');
-        reconnector.begin();
         openWebSocket(saved.name);
     }
 

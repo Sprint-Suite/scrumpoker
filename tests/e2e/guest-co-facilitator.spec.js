@@ -111,3 +111,24 @@ test('a second tab with the same session replaces the first', async ({ browser }
     await Promise.all([member.context.close(), guest.context.close()]);
   }
 });
+
+test('a refresh into a room that has closed shows the join form with the closed-or-busy message', async ({ browser }) => {
+  seedSession({ id: 's-gcf-closed', userId: 'u-gcf-closed' });
+  const member = await openRoomAsMember(browser, 's-gcf-closed', 'guest-cf-closed');
+  const guest = await joinAsGuest(browser, member.token);
+  try {
+    const stored = await guest.page.evaluate(() => sessionStorage.getItem('scrumPokerGuest'));
+    await member.page.click('#end-session-button');
+    await member.page.click('#confirm-end-session-button');
+    await expect(member.page.locator('#login-section')).toBeVisible();
+
+    const fresh = await guest.context.newPage();
+    await fresh.addInitScript((value) => sessionStorage.setItem('scrumPokerGuest', value), stored);
+    await fresh.goto(`/join?token=${member.token}`);
+    await expect(fresh.locator('#join-section')).toBeVisible({ timeout: 5000 });
+    await expect(fresh.locator('#join-error')).toContainText('may have closed, or the server is busy');
+    await expect(fresh.locator('#join-button')).toBeEnabled();
+  } finally {
+    await Promise.all([member.context.close(), guest.context.close()]);
+  }
+});
