@@ -200,3 +200,16 @@ test('a manual Join after a 1008 close still sends the rejoin key', async ({ bro
     await Promise.all([member.context.close(), guest.context.close()]);
   }
 });
+
+test('a 4000 close without the replaced message is terminal and does not reconnect', async ({ browser }) => {
+  const member = await openMemberRoom(browser, 's-rc-4000', 'rc-4000');
+  const guest = await joinGuestPage(browser, member.token);
+  try {
+    await guest.sockets[0].ws.close({ code: 4000, reason: 'replaced' });
+    await expect(guest.page.locator('#join-error')).toHaveText('This session continued in another tab or window.');
+    await guest.page.waitForTimeout(2500);
+    expect(guest.sockets).toHaveLength(1);
+  } finally {
+    await Promise.all([member.context.close(), guest.context.close()]);
+  }
+});

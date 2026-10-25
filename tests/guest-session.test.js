@@ -78,6 +78,7 @@ function fakeClock() {
     now: () => t,
     setTimer: (fn, ms) => { timers.set(nextId, { fn, at: t + ms }); return nextId++; },
     clearTimer: (id) => timers.delete(id),
+    pending: () => timers.size,
     advance(ms) {
       const end = t + ms;
       for (;;) {
@@ -136,6 +137,7 @@ test("repeated begin() and schedule() do not extend the deadline", () => {
   reconnector.begin();
   clock.advance(60000);
   reconnector.begin();
+  assert.equal(clock.pending(), 1);
   reconnector.schedule();
   clock.advance(59999);
   assert.equal(calls.giveUp, 0);

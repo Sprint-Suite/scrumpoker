@@ -127,19 +127,15 @@
 
     function handleClose(event) {
         if (ended) return;
-        if (event.code === 1008) {
-            updateConnectionStatus('disconnected', 'Disconnected');
-            return backToJoin('Disconnected for sending too many messages. Please try rejoining.');
-        }
-        if (!pokerRoomSection.classList.contains('hidden')) reconnector.begin();
-        if (reconnector.active()) return reconnector.schedule();
+        if (event.code === 4000) return onReplaced();
+        const tooMany = event.code === 1008;
+        if (!tooMany && !pokerRoomSection.classList.contains('hidden')) reconnector.begin();
+        if (!tooMany && reconnector.active()) return reconnector.schedule();
         updateConnectionStatus('disconnected', 'Disconnected');
         // A refused upgrade could be a closed room or a busy server; the page cannot tell which.
-        backToJoin(everOpened ? 'Disconnected. Please try rejoining.' : CLOSED_OR_BUSY);
-    }
-
-    function showConnecting() {
-        if (!reconnector.active()) updateConnectionStatus('connecting', 'Connecting...');
+        if (!everOpened) return backToJoin(CLOSED_OR_BUSY);
+        backToJoin(tooMany ? 'Disconnected for sending too many messages. Please try rejoining.'
+            : 'Disconnected. Please try rejoining.');
     }
 
     // --- WebSocket ---
@@ -147,7 +143,7 @@
         const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
         const url = `${protocol}//${location.host}/ws?token=${encodeURIComponent(token)}`;
 
-        showConnecting();
+        if (!reconnector.active()) updateConnectionStatus('connecting', 'Connecting...');
         joinButton.disabled = true;
         guestName = name;
         ended = false;
@@ -155,10 +151,12 @@
         detachSocket();
         everOpened = false;
         ws = new WebSocket(url);
+        wireSocket(name);
+    }
 
+    function wireSocket(name) {
         ws.onopen = () => {
             everOpened = true;
-            showConnecting();
             ws.send(JSON.stringify({ type: 'login', payload: { name, rejoinKey: rejoinKey || undefined } }));
         };
 
@@ -171,7 +169,6 @@
         };
 
         ws.onerror = () => updateConnectionStatus('disconnected', 'Connection error');
-
         ws.onclose = handleClose;
     }
 
