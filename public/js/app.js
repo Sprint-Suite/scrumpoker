@@ -62,7 +62,8 @@
  let currentRoom = null;   // ← NEW: will hold the room name after login
  let participants = []; // Array of user objects received from server
  let votesRevealed = false; // Status received from server
- let facilitatorId = null; // ID received from server
+ const MAX_FACILITATORS = 2; // mirrors lib/roles.js
+ let facilitatorIds = []; // IDs received from server
  let pendingLoginContext = null;
  let pendingLoginSource = '';
  let connectionState = 'connecting'; // 'connecting' | 'connected' | 'error' | 'disconnected'
@@ -220,7 +221,7 @@ function showVoteError(message) {
                  const wasRoomVisible = isRoomVisible();
                  participants = payload.participants || [];
                  votesRevealed = payload.votesRevealed || false;
-                 facilitatorId = payload.facilitatorId || null;
+                 facilitatorIds = payload.facilitatorIds || [];
                  currentShareToken = payload.shareToken || null;
                  pokerRoomSection.dataset.shareToken = currentShareToken || '';
 
@@ -528,6 +529,10 @@ function markRoomReconnectIntent() {
  // Function to open modal and pre‐select current role
  function openEditRoleModal() {
  if (!currentUser) return;
+ // Only an existing facilitator holds that role; members cannot take it themselves.
+ const facilitatorOption = editRoleSelect.querySelector('option[value="Facilitator"]');
+ facilitatorOption.hidden = currentUser.role !== 'Facilitator';
+ facilitatorOption.disabled = currentUser.role !== 'Facilitator';
  editRoleSelect.value = currentUser.role;
  editRoleError.classList.add('hidden');
  editRoleModal.classList.remove('hidden');
@@ -786,7 +791,7 @@ function renderVotingCards() {
          const roleSpan = document.createElement('span');
          roleSpan.textContent = `(${participant.role})`; // Display role clearly
          roleSpan.classList.add('participant-role');
-          if (participant.id === facilitatorId) {
+          if (facilitatorIds.includes(participant.id)) {
               roleSpan.textContent += ' Lead'; // Indicate Facilitator
               roleSpan.classList.add('is-facilitator');
           }
@@ -800,7 +805,9 @@ function renderVotingCards() {
               // Select dropdown for roles
               const roleSelect = document.createElement('select');
               roleSelect.classList.add('participant-role-select');
-              const roles = ['Voter', 'Observer', 'Facilitator'];
+              // A full facilitator list only offers the role to those already holding it.
+              const canGrant = facilitatorIds.length < MAX_FACILITATORS || facilitatorIds.includes(participant.id);
+              const roles = canGrant ? ['Voter', 'Observer', 'Facilitator'] : ['Voter', 'Observer'];
               roles.forEach(r => {
                   const option = document.createElement('option');
                   option.value = r;
@@ -962,7 +969,7 @@ function renderVotingCards() {
      currentUser = null;
      participants = [];
      votesRevealed = false;
-     facilitatorId = null;
+     facilitatorIds = [];
      currentRoom = null;
      currentShareToken = null;
      pendingLoginContext = null;

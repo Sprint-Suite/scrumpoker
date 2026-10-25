@@ -278,7 +278,7 @@ test('WebSocket workflow covers login, voting, reveal, reset, and role limits', 
   });
 
   assert.equal(findParticipant(aliceInitialState, 'Alice').role, 'Facilitator');
-  assert.equal(aliceInitialState.facilitatorId, alice.id);
+  assert.deepEqual(aliceInitialState.facilitatorIds, [alice.id]);
 
   const bob = await connectClient(t, port);
   const aliceSeesBob = waitForState(alice.ws, (state) => Boolean(findParticipant(state, 'Bob')));
