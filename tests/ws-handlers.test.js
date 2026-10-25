@@ -862,3 +862,13 @@ test('takeover with both facilitator places filled promotes no waiting member', 
   assert.deepEqual(room.facilitatorIds, ['host', 'guest2']);
   assert.equal(h.participants.bob.role, ROLES.VOTER);
 });
+
+test('promote then key-less re-login, repeated, never leaves more than two holds', (t) => {
+  const { room, connect, grant } = guestRoom(t);
+  for (let i = 0; i < 50; i++) {
+    connect('g1', {}, T0 + i);
+    grant('g1');
+    connect('g1', {}, T0 + i);
+  }
+  assert.ok(room.holds.size <= 2, `holds: ${room.holds.size}`);
+});

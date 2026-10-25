@@ -1,6 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
+const { MAX_FACILITATORS } = require('../lib/roles');
 const { GUEST_HOLD_MS, claimGuestKey, issueGuestKey, keyOf, releaseGuest } = require('../lib/guestSeats');
 const { createRoom } = require('../lib/roomState');
 
@@ -50,4 +51,29 @@ test('an unknown or missing key claims nothing', () => {
   const room = createRoom();
   assert.equal(claimGuestKey(room, 'f'.repeat(32), NOW), null);
   assert.equal(claimGuestKey(room, undefined, NOW), null);
+});
+
+function holdFor(room, id, now) {
+  issueGuestKey(room, id);
+  const key = keyOf(room, id);
+  releaseGuest(room, id, { holdSeat: true, now });
+  return key;
+}
+
+test('an expired hold is removed when the next hold is recorded', () => {
+  const room = createRoom();
+  const stale = holdFor(room, 'g1', NOW);
+  holdFor(room, 'g2', NOW + GUEST_HOLD_MS);
+  assert.equal(room.holds.has(stale), false);
+  assert.equal(room.holds.size, 1);
+});
+
+test('a third live hold leaves MAX_FACILITATORS holds and evicts the soonest-expiring', () => {
+  const room = createRoom();
+  const first = holdFor(room, 'g1', NOW);
+  const second = holdFor(room, 'g2', NOW + 10);
+  const third = holdFor(room, 'g3', NOW + 20);
+  assert.equal(room.holds.size, MAX_FACILITATORS);
+  assert.equal(room.holds.has(first), false);
+  assert.equal(room.holds.has(second) && room.holds.has(third), true);
 });
