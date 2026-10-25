@@ -155,6 +155,7 @@
 
         ws.onclose = (event) => {
             if (ended) return;
+            if (event.code === 4000) return onReplaced();
             if (event.code !== 1008 && !pokerRoomSection.classList.contains('hidden')) reconnector.begin();
             if (reconnector.active()) return reconnector.schedule();
             updateConnectionStatus('disconnected', 'Disconnected');
