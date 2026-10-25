@@ -96,6 +96,12 @@ hub-written SQLite file it only reads.
 ### 2.4 WebSocket Protocol
 
 - Server endpoint: `/ws`. `maxPayload: 64 KB`, `perMessageDeflate: false`.
+- Limits (`lib/wsLimits.js`): a slot is reserved per upgrade before auth runs,
+  40 concurrent per client IP and 400 in total, plus 60 admitted upgrades per IP
+  per sliding 10 s. Refusals are HTTP 429/503. Each socket's messages are
+  token-bucketed (20 burst, 5/s); a socket over that is closed with 1008 and
+  never read again. The client IP is the rightmost `X-Forwarded-For` entry,
+  trusted only from a loopback peer (Apache).
 - On connect the server issues `{ type: 'yourId', payload: { id } }`.
 - **Client → server message types:** `login`, `vote`, `revealVotes`,
   `resetVotes`, `endSession`, `startNextRound`, `changeRole`, `logout`.

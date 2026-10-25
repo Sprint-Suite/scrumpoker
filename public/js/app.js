@@ -74,6 +74,8 @@
  // --- WebSocket Setup ---
  let ws = null;
  let everOpened = false;
+ const reconnect = window.ScrumPokerReconnect;
+ const reconnectBackoff = reconnect.createBackoff();
 
 // Dynamically determine WebSocket URL from the current page origin.
 
@@ -135,8 +137,7 @@ function setConnectionState(state) {
 
      ws.onclose = (event) => {
          if (!everOpened) {
-             showLoginError('Your session expired — re-launch poker from the hub.');
-             setTimeout(() => window.location.reload(), 1500);
+             handleRefusedConnection();
              return;
          }
          everOpened = false;
@@ -146,11 +147,21 @@ function setConnectionState(state) {
          currentUser = null; // Clear user state
          participants = [];
          showLogin({ clearError: false }); // Go back to login screen
-         showLoginError('Connection lost. Reconnecting...');
-         // Optional: Attempt to reconnect after a delay
-         setTimeout(connectWebSocket, 5000); // Reconnect after 5 seconds
-
+         showLoginError(event.code === 1008 ? 'Too many messages. Reconnecting...' : 'Connection lost. Reconnecting...');
+         setTimeout(connectWebSocket, reconnectBackoff.next());
      };
+ }
+
+ async function handleRefusedConnection() {
+     if (await reconnect.probeAccess(window.fetch.bind(window)) === 'reauth') {
+         showLoginError('Your session has ended or this account has no access — re-launch poker from the hub.');
+         setTimeout(() => window.location.reload(), 1500);
+         return;
+     }
+     updateConnectionStatus('disconnected', 'Server busy');
+     setConnectionState('disconnected');
+     showLoginError('The server is busy. Retrying...');
+     setTimeout(connectWebSocket, reconnectBackoff.next());
  }
 
  function updateConnectionStatus(status, text) {
@@ -195,6 +206,7 @@ function showVoteError(message) {
 
      switch (type) {
          case 'yourId':
+             reconnectBackoff.reset();
              // Store the ID assigned by the server
              if (payload && payload.id) {
                   // We don't set currentUser here yet, wait for login success / state update
