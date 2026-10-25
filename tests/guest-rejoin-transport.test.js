@@ -62,7 +62,7 @@ test('the rejoin key reaches only its owner', async (t) => {
 });
 
 test('a guest facilitator whose socket drops rejoins as Facilitator', async (t) => {
-  const { port, wsServer } = await startServer(t, { verifySession: guestsOnly });
+  const { port } = await startServer(t, { verifySession: guestsOnly });
   const alice = await memberInRoom(port);
   t.after(() => alice.ws.terminate());
   const guest = await grantedGuest(t, port, alice);
@@ -94,8 +94,8 @@ test('a second connection with the key replaces the first, and the old socket ca
   // A login the old socket had in flight is delivered after the swap; the server must ignore it.
   serverSide.emit('message', JSON.stringify({ type: 'login', payload: { name: 'Guest', rejoinKey: guest.key } }));
   alice.send('changeRole', { targetUserId: second.id, newRole: 'Voter' });
-  const after = await alice.box.next(stateWhere((s) => s.participants.some((p) => p.id === second.id) && !s.facilitatorIds.includes(second.id)));
-  assert.equal(after.payload.participants.length, 2);
-  assert.ok(after.payload.participants.some((p) => p.id === second.id));
-  assert.equal(second.ws.received.some((m) => m.type === 'replaced'), false);
+  const settled = await second.box.next((m) => m.type === 'replaced' || stateWhere((st) => !st.facilitatorIds.includes(second.id))(m));
+  assert.notEqual(settled.type, 'replaced', 'the old socket\'s resent login took the place from the new connection');
+  assert.equal(settled.payload.participants.length, 2);
+  assert.ok(settled.payload.participants.some((p) => p.id === second.id));
 });
