@@ -1,6 +1,7 @@
 const { test, expect } = require('@playwright/test');
 const { seedSession } = require('./helpers/seed');
 const { injectSession } = require('./helpers/_auth');
+const { expectResultsInVoteColumn } = require('./helpers/layout');
 
 test('authed user joins a company room, votes, reveals', async ({ page, context }) => {
   seedSession();
@@ -33,6 +34,7 @@ test('authed user joins a company room, votes, reveals', async ({ page, context 
   await expect(page.locator('#average-vote')).toHaveText('5.0');
   await expect(page.locator('#ordered-votes-list')).toContainText('Alice');
   await expect(page.locator('#ordered-votes-list')).toContainText('5');
+  await expectResultsInVoteColumn(page);
 });
 
 test('no session bounces away from the app page', async ({ page }) => {

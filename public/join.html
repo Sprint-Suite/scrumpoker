@@ -6,7 +6,7 @@
     <title>Join Poker Room</title>
 
     <link rel="stylesheet" href="/css/instrument-core.css">
-    <link rel="stylesheet" href="/css/poker.css">
+    <link rel="stylesheet" href="/css/poker.css?v=2">
 </head>
 
 <body class="ins app-page" data-app="poker">
@@ -43,20 +43,42 @@
         </div>
 
         <div class="room-grid">
-            <section class="room-card vote-panel" aria-labelledby="vote-panel-title">
-                <div class="section-heading">
-                    <div>
-                        <span class="section-kicker">Vote</span>
-                        <h2 id="vote-panel-title">Cast your vote</h2>
+            <div class="room-main">
+                <section class="room-card vote-panel" aria-labelledby="vote-panel-title">
+                    <div class="section-heading">
+                        <div>
+                            <span class="section-kicker">Vote</span>
+                            <h2 id="vote-panel-title">Cast your vote</h2>
+                        </div>
+                        <span id="round-status" class="status-pill">Open</span>
                     </div>
-                    <span id="round-status" class="status-pill">Open</span>
-                </div>
 
-                <div id="voting-cards" class="voting-deck sticker-grid" aria-label="Voting cards">
-                    <span class="observer-note hidden" id="observer-message">Observers cannot vote.</span>
-                </div>
-                <p id="vote-error" class="form-error room-error hidden"></p>
-            </section>
+                    <div id="voting-cards" class="voting-deck sticker-grid" aria-label="Voting cards">
+                        <span class="observer-note hidden" id="observer-message">Observers cannot vote.</span>
+                    </div>
+                    <p id="vote-error" class="form-error room-error hidden"></p>
+                </section>
+
+                <section id="vote-summary" class="room-card result-card hidden" aria-labelledby="results-title">
+                    <div class="section-heading compact">
+                        <div>
+                            <span class="section-kicker">Results</span>
+                            <h2 id="results-title">Vote Results</h2>
+                        </div>
+                    </div>
+                    <p>Average Vote: <span id="average-vote">--</span></p>
+                </section>
+
+                <section id="ordered-votes" class="room-card grouped-results hidden" aria-labelledby="grouped-results-title">
+                    <div class="section-heading compact">
+                        <div>
+                            <span class="section-kicker">Grouped</span>
+                            <h2 id="grouped-results-title">Grouped Results</h2>
+                        </div>
+                    </div>
+                    <div id="ordered-votes-list" class="ordered-votes-list"></div>
+                </section>
+            </div>
 
             <section class="room-card participants-panel" aria-labelledby="participants-title">
                 <div class="section-heading">
@@ -67,27 +89,6 @@
                 </div>
                 <div id="participants-list" class="participants-list"></div>
             </section>
-
-            <section id="vote-summary" class="room-card result-card hidden" aria-labelledby="results-title">
-                <div class="section-heading compact">
-                    <div>
-                        <span class="section-kicker">Results</span>
-                        <h2 id="results-title">Vote Results</h2>
-                    </div>
-                </div>
-                <p>Average Vote: <span id="average-vote">--</span></p>
-            </section>
-
-            <section id="ordered-votes" class="room-card grouped-results hidden" aria-labelledby="grouped-results-title">
-                <div class="section-heading compact">
-                    <div>
-                        <span class="section-kicker">Grouped</span>
-                        <h2 id="grouped-results-title">Grouped Results</h2>
-                    </div>
-                </div>
-                <div id="ordered-votes-list" class="ordered-votes-list"></div>
-            </section>
-
         </div>
         </div>
     </main>
