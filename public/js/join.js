@@ -13,6 +13,7 @@
     const joinError = document.getElementById('join-error');
     const connectionStatus = document.getElementById('connection-status');
     const userGreeting = document.getElementById('user-greeting');
+    const roomDisplay = document.getElementById('room-display');
     const votingCardsContainer = document.getElementById('voting-cards');
     const observerMessage = document.getElementById('observer-message');
     const voteError = document.getElementById('vote-error');
@@ -32,6 +33,7 @@
     let myId = null;
     let participants = [];
     let votesRevealed = false;
+    let roomName = null;
     let currentUser = null;
     let animateVotingCards = true;
     let voteErrorTimer = null;
@@ -147,6 +149,7 @@
                 const wasRevealedInRoom = votesRevealed && !pokerRoomSection.classList.contains('hidden');
                 participants = payload.participants || [];
                 votesRevealed = payload.votesRevealed || false;
+                roomName = payload.displayName || null;
 
                 if (myId) {
                     currentUser = participants.find(p => p.id === myId) || null;
@@ -203,6 +206,7 @@
     function updateUI() {
         if (!currentUser) return;
 
+        roomDisplay.textContent = roomName ? `Room: ${roomName}` : '';
         userGreeting.textContent = `Joined as ${currentUser.name}`;
         renderRoundStatus();
         renderVotingCards();

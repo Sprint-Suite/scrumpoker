@@ -31,6 +31,7 @@ test('anonymous player joins via share link, votes, and cannot facilitate', asyn
 
     // The anonymous guest is in the room and can vote.
     await expect(anon.locator('#poker-room-section')).toBeVisible();
+    await expect(anon.locator('#room-display')).toHaveText('Room: anon-room');
     await anon.locator('button.vote-card[data-value="8"]').click();
     await expect(anon.locator('button.vote-card[data-value="8"]')).toHaveClass(/selected/);
 
