@@ -92,7 +92,7 @@ test('a member whose session has gone is sent back through sign-in', async ({ pa
   await navigated;
 });
 
-test('a guest who rejoins after the room closed is told the room may be gone or the server busy', async ({ page, context, browser }) => {
+test('a guest who drops reconnects, and one who joins after the room closed is told the room may be gone or the server busy', async ({ page, context, browser }) => {
   seedSession();
   await injectSession(context);
   await page.goto('/');
@@ -113,12 +113,16 @@ test('a guest who rejoins after the room closed is told the room may be gone or 
     await expect(anon.locator('#poker-room-section')).toBeVisible();
 
     await guestSockets[0].ws.close({ code: 1001 });
-    await expect(anon.locator('#join-error')).toContainText('Disconnected');
+    await expect(anon.locator('#connection-status')).toHaveText('Reconnecting...');
+    await expect(anon.locator('#poker-room-section')).toBeVisible();
+    await expect(anon.locator('#connection-status')).toHaveText('Connected');
 
     await page.click('#end-session-button');
     await page.click('#confirm-end-session-button');
     await expect(page.locator('#login-section')).toBeVisible();
 
+    await anon.goto(`/join?token=${token}`);
+    await anon.fill('#join-name-input', 'Guest');
     await anon.click('#join-button');
     await expect(anon.locator('#join-error')).toContainText('may have closed, or the server is busy');
   } finally {

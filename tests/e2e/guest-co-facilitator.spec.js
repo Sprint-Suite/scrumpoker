@@ -73,3 +73,41 @@ test('a guest facilitator is demoted and loses the controls', async ({ browser }
     await Promise.all([member.context.close(), guest.context.close()]);
   }
 });
+
+test('a guest facilitator who refreshes is still Facilitator', async ({ browser }) => {
+  seedSession({ id: 's-gcf-reload', userId: 'u-gcf-reload' });
+  const member = await openRoomAsMember(browser, 's-gcf-reload', 'guest-cf-reload');
+  const guest = await joinAsGuest(browser, member.token);
+  try {
+    await guestRoleSelect(member).selectOption('Facilitator');
+    await expect(guest.page.locator('#show-votes-button')).toBeVisible();
+
+    await guest.page.reload();
+    await expect(guest.page.locator('#poker-room-section')).toBeVisible();
+    await expect(guest.page.locator('#show-votes-button')).toBeVisible();
+    await expect(member.page.locator('.participant-row').filter({ hasText: 'Guest' })).toHaveCount(1);
+  } finally {
+    await Promise.all([member.context.close(), guest.context.close()]);
+  }
+});
+
+test('a second tab with the same session replaces the first', async ({ browser }) => {
+  seedSession({ id: 's-gcf-replace', userId: 'u-gcf-replace' });
+  const member = await openRoomAsMember(browser, 's-gcf-replace', 'guest-cf-replace');
+  const guest = await joinAsGuest(browser, member.token);
+  try {
+    const stored = await guest.page.evaluate(() => sessionStorage.getItem('scrumPokerGuest'));
+    expect(stored).not.toBeNull();
+
+    const second = await guest.context.newPage();
+    await second.addInitScript((value) => sessionStorage.setItem('scrumPokerGuest', value), stored);
+    await second.goto(`/join?token=${member.token}`);
+
+    await expect(second.locator('#poker-room-section')).toBeVisible();
+    await expect(guest.page.locator('#join-error')).toHaveText('This session continued in another tab or window.');
+    await expect(guest.page.locator('#join-button')).toBeEnabled();
+    await expect(member.page.locator('.participant-row').filter({ hasText: 'Guest' })).toHaveCount(1);
+  } finally {
+    await Promise.all([member.context.close(), guest.context.close()]);
+  }
+});

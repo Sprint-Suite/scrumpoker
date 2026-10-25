@@ -5,6 +5,8 @@
     const fibonacciVotes = ['0', '1', '2', '3', '5', '8', '13', '?'];
     const cardDeck = window.ScrumPokerCardDeck;
     const voteResults = window.ScrumPokerVoteResults;
+    const CLOSED_OR_BUSY = 'This room may have closed, or the server is busy. Try again in a moment.';
+    const guestSession = window.ScrumPokerGuestSession;
 
     // --- DOM Elements ---
     const joinSection = document.getElementById('join-section');
@@ -49,6 +51,13 @@
     let ended = false;
     let facilitatorIds = [];
     let shareToken = null;
+    let rejoinKey = null;
+    let guestName = null;
+    const reconnector = guestSession.createReconnector({
+        reopen: () => openWebSocket(guestName),
+        onWait: () => updateConnectionStatus('disconnected', 'Reconnecting...'),
+        onGiveUp: () => backToJoin(CLOSED_OR_BUSY)
+    });
 
     // --- Read token from URL ---
     const token = new URLSearchParams(window.location.search).get('token');
@@ -97,6 +106,15 @@
         joinButton.disabled = true;
     }
 
+    // Every way back to the join form also forgets the stored session.
+    function backToJoin(message) {
+        reconnector.stop();
+        guestSession.clear(sessionStorage);
+        showJoinSection();
+        showJoinError(message);
+        joinButton.disabled = false;
+    }
+
     // --- WebSocket ---
     function openWebSocket(name) {
         const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -104,6 +122,8 @@
 
         updateConnectionStatus('connecting', 'Connecting...');
         joinButton.disabled = true;
+        guestName = name;
+        ended = false;
 
         // Drop any prior socket so its onclose can't fire a second reconnect path.
         if (ws) { ws.onclose = null; ws.close(); }
@@ -113,7 +133,7 @@
         ws.onopen = () => {
             everOpened = true;
             updateConnectionStatus('connecting', 'Connecting...');
-            ws.send(JSON.stringify({ type: 'login', payload: { name } }));
+            ws.send(JSON.stringify({ type: 'login', payload: { name, rejoinKey: rejoinKey || undefined } }));
         };
 
         ws.onmessage = (event) => {
@@ -131,17 +151,13 @@
 
         ws.onclose = (event) => {
             if (ended) return;
+            if (!pokerRoomSection.classList.contains('hidden')) reconnector.begin();
+            if (reconnector.active()) return reconnector.schedule();
             updateConnectionStatus('disconnected', 'Disconnected');
-            showJoinSection();
-            joinButton.disabled = false;
-            if (!everOpened) {
-                // A refused upgrade could be a closed room or a busy server; the page cannot tell which.
-                showJoinError('This room may have closed, or the server is busy. Try again in a moment.');
-            } else if (event.code === 1008) {
-                showJoinError('Disconnected for sending too many messages. Please try rejoining.');
-            } else {
-                showJoinError('Disconnected. Please try rejoining.');
-            }
+            // A refused upgrade could be a closed room or a busy server; the page cannot tell which.
+            if (!everOpened) backToJoin(CLOSED_OR_BUSY);
+            else if (event.code === 1008) backToJoin('Disconnected for sending too many messages. Please try rejoining.');
+            else backToJoin('Disconnected. Please try rejoining.');
         };
     }
 
@@ -170,6 +186,7 @@
                 }
 
                 if (currentUser) {
+                    reconnector.stop();
                     updateConnectionStatus('connected', 'Connected');
                     showRoomSection();
                     if (wasRevealedInRoom && !votesRevealed) {
@@ -190,9 +207,7 @@
                 console.error('Server error:', errorMessage);
                 if (/closed|invalid|expired/i.test(errorMessage)) {
                     // Fatal link/room error — show on entry screen
-                    showJoinSection();
-                    showJoinError(errorMessage);
-                    joinButton.disabled = false;
+                    backToJoin(errorMessage);
                 } else {
                     renderParticipantsList();
                     if (!controls.handleError(errorMessage)) showVoteError(errorMessage);
@@ -200,13 +215,21 @@
                 break;
             }
 
+            case 'rejoinKey':
+                rejoinKey = payload.key;
+                guestSession.save(sessionStorage, { token, name: guestName, rejoinKey });
+                break;
+
+            case 'replaced':
+                ended = true;
+                backToJoin('This session continued in another tab or window.');
+                break;
+
             case 'sessionEnded': {
                 ended = true;
                 if (ws) ws.close();
                 updateConnectionStatus('disconnected', 'Session ended');
-                showJoinSection();
-                const msg = payload?.message || 'The facilitator ended this session.';
-                showJoinError(msg);
+                backToJoin(payload?.message || 'The facilitator ended this session.');
                 joinButton.disabled = true;
                 break;
             }
@@ -356,6 +379,14 @@
         }
         hideJoinError();
         openWebSocket(name);
+    }
+
+    const saved = token ? guestSession.load(sessionStorage, token) : null;
+    if (saved) {
+        rejoinKey = saved.rejoinKey;
+        joinSection.classList.add('hidden');
+        reconnector.begin();
+        openWebSocket(saved.name);
     }
 
     // --- Event Listeners ---
