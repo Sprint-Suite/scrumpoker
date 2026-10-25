@@ -136,6 +136,7 @@ test('getRoomState projects room reveal and facilitator state', () => {
   const room = joinRoom(rooms, 'alpha', 'alice', 100);
   room.votesRevealed = true;
   room.facilitatorId = 'alice';
+  room.displayName = 'Alpha';
 
   const participants = {
     alice: participant('alice', 'alpha', { role: 'Facilitator', vote: '8' })
@@ -156,7 +157,8 @@ test('getRoomState projects room reveal and facilitator state', () => {
       ],
       votesRevealed: true,
       facilitatorId: 'alice',
-      shareToken: rooms.get('alpha').shareToken
+      shareToken: rooms.get('alpha').shareToken,
+      displayName: 'Alpha'
     }
   });
 });

@@ -1,6 +1,7 @@
 const { test, expect } = require('@playwright/test');
 const { seedSession } = require('./helpers/seed');
 const { injectSession } = require('./helpers/_auth');
+const { expectResultsInVoteColumn } = require('./helpers/layout');
 
 // An authenticated company member opens a room and shares its anonymous link;
 // a person with NO account joins via that link and can vote but cannot facilitate.
@@ -30,6 +31,7 @@ test('anonymous player joins via share link, votes, and cannot facilitate', asyn
 
     // The anonymous guest is in the room and can vote.
     await expect(anon.locator('#poker-room-section')).toBeVisible();
+    await expect(anon.locator('#room-display')).toHaveText('Room: anon-room');
     await anon.locator('button.vote-card[data-value="8"]').click();
     await expect(anon.locator('button.vote-card[data-value="8"]')).toHaveClass(/selected/);
 
@@ -44,6 +46,14 @@ test('anonymous player joins via share link, votes, and cannot facilitate', asyn
     await page.click('#show-votes-button');
     await expect(anon.locator('#vote-summary')).toBeVisible();
     await expect(anon.locator('#average-vote')).toHaveText('8.0');
+    await expect(anon.locator('#ordered-votes')).toBeVisible();
+    await expectResultsInVoteColumn(anon);
+
+    // A reset flips the guest's cards face-down before the new round opens.
+    await page.click('#reset-votes-button');
+    await expect(anon.locator('.vote-card .card-inner.is-face-down').first()).toBeAttached();
+    await expect(anon.locator('#round-status')).toHaveText('Open');
+    await expect(anon.locator('button.vote-card.selected')).toHaveCount(0);
   } finally {
     await anonCtx.close();
   }
