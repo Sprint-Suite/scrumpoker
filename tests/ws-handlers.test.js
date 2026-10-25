@@ -689,7 +689,8 @@ function guestRoom(t, { facilitators = [] } = {}) {
   room.facilitatorIds = ['host'];
   normalizeFacilitators(h.rooms, h.participants, roomName);
   const connect = (userId, payload = {}, now = T0) => {
-    const ws = { userId, authed: false, anonRoom: roomName, anonToken: room.shareToken };
+    const ws = { userId, authed: false, anonRoom: roomName, anonToken: room.shareToken, closedWith: null };
+    ws.close = (code) => { ws.closedWith = code; };
     handleLogin({ ...h, ws, userId, payload: { name: userId, ...payload }, now });
     return ws;
   };
@@ -807,4 +808,57 @@ test('a non-facilitator guest who leaves leaves no hold', (t) => {
   exit('g1');
   assert.equal(room.holds.size, 0);
   assert.equal(room.guestKeys.size, 0);
+});
+
+function takeoverRoom(t) {
+  const ctx = guestRoom(t);
+  const { h, room, roomName, connect, lastKey, grant } = ctx;
+  h.participants.bob = participant('bob', roomName);
+  joinRoom(h.rooms, roomName, 'bob');
+  const oldWs = connect('guest');
+  grant('guest');
+  const key = lastKey();
+  return { ...ctx, oldWs, key, room, roomName };
+}
+
+test('a key matching a live guest facilitator moves the place to the new connection', (t) => {
+  const { h, room, connect, oldWs, key } = takeoverRoom(t);
+  assert.deepEqual(room.facilitatorIds, ['host', 'guest']);
+  const newWs = connect('guest2', { rejoinKey: key });
+  assert.deepEqual(room.facilitatorIds, ['host', 'guest2']);
+  assert.equal(h.participants.bob.role, ROLES.VOTER);
+  assert.equal(h.participants.guest, undefined);
+  assert.equal(h.participants.guest2.role, ROLES.FACILITATOR);
+  assert.equal(newWs.role, ROLES.FACILITATOR);
+  assert.equal(oldWs.replaced, true);
+  assert.equal(oldWs.closedWith, 4000);
+  assert.ok(h.clientMessages.some((m) => m.userId === 'guest' && m.message.type === 'replaced'));
+  assert.equal(room.holds.size, 0);
+  assert.equal(room.users.has('guest'), false);
+  assert.equal(room.guestKeys.get(key), 'guest2');
+});
+
+test('the old socket\'s later exit after a takeover changes nothing', (t) => {
+  const { h, room, connect, exit, key } = takeoverRoom(t);
+  connect('guest2', { rejoinKey: key });
+  const before = JSON.stringify({ users: [...room.users], f: room.facilitatorIds, k: [...room.guestKeys], hold: room.holds.size });
+  assert.equal(exit('guest'), null);
+  assert.equal(JSON.stringify({ users: [...room.users], f: room.facilitatorIds, k: [...room.guestKeys], hold: room.holds.size }), before);
+  assert.equal(h.participants.guest2.role, ROLES.FACILITATOR);
+});
+
+test('a key never takes over a member', (t) => {
+  const { h, room, connect } = takeoverRoom(t);
+  connect('guest2', { rejoinKey: 'a'.repeat(32) });
+  assert.equal(h.participants.guest2.role, ROLES.VOTER);
+  assert.equal(h.participants.bob.roomName, 'co1-planning');
+  assert.deepEqual(room.facilitatorIds, ['host', 'guest']);
+});
+
+test('takeover with both facilitator places filled promotes no waiting member', (t) => {
+  const { h, room, connect, key } = takeoverRoom(t);
+  assert.equal(room.facilitatorIds.length, 2);
+  connect('guest2', { rejoinKey: key });
+  assert.deepEqual(room.facilitatorIds, ['host', 'guest2']);
+  assert.equal(h.participants.bob.role, ROLES.VOTER);
 });
