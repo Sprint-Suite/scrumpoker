@@ -368,6 +368,7 @@ test('handleLogin joins a room namespaced by company id', (t) => {
   handleLogin({ ws, userId: 'u1', payload: loginPayload(), rooms: h.rooms, participants: h.participants, sendToClient: h.sendToClient, sendRoomState: h.sendRoomState });
   assert.ok(h.participants['u1']);
   assert.equal(h.participants['u1'].roomName, 'co1-planning');
+  assert.equal(h.rooms.get('co1-planning').displayName, 'planning');
   assert.deepEqual(h.roomStates, ['co1-planning']);
 });
 
@@ -398,13 +399,14 @@ test('authed login is company-scoped and ignores teamId', (t) => {
 
 test('anonymous login forces Voter, ignores requested role/room, binds to ws.anonRoom', (t) => {
   const harness = createHarness(t);
-  harness.rooms.set('co1-planning', { users: new Set(), lastActive: Date.now(), votesRevealed: false, facilitatorId: null, shareToken: 'tok' });
+  harness.rooms.set('co1-planning', { users: new Set(), lastActive: Date.now(), votesRevealed: false, facilitatorId: null, shareToken: 'tok', displayName: 'planning' });
   const ws = { userId: 'bob', authed: false, anonRoom: 'co1-planning', anonToken: 'tok' };
   handleLogin({ ws, userId: 'bob', payload: { name: 'Bob', role: ROLES.FACILITATOR, room: 'evil-room' }, rooms: harness.rooms, participants: harness.participants, sendToClient: harness.sendToClient, sendRoomState: harness.sendRoomState });
   assert.equal(harness.participants.bob.roomName, 'co1-planning');
   assert.equal(harness.participants.bob.role, ROLES.VOTER);
   assert.equal(harness.participants.bob.authed, false);
   assert.notEqual(harness.rooms.get('co1-planning').facilitatorId, 'bob');
+  assert.equal(harness.rooms.get('co1-planning').displayName, 'planning');
 });
 
 test('authed login with no company errors', (t) => {
