@@ -36,10 +36,10 @@ test('anonymous player joins via share link, votes, and cannot facilitate', asyn
     await expect(anon.locator('button.vote-card[data-value="8"]')).toHaveClass(/selected/);
 
     // The anonymous page exposes NO facilitator controls.
-    await expect(anon.locator('#show-votes-button')).toHaveCount(0);
-    await expect(anon.locator('#reset-votes-button')).toHaveCount(0);
-    await expect(anon.locator('#end-session-button')).toHaveCount(0);
-    await expect(anon.locator('#invite-menu-button')).toHaveCount(0);
+    await expect(anon.locator('#show-votes-button')).toBeHidden();
+    await expect(anon.locator('#reset-votes-button')).toBeHidden();
+    await expect(anon.locator('#end-session-button')).toBeHidden();
+    await expect(anon.locator('#invite-menu-button')).toBeHidden();
 
     // The facilitator sees the guest and can reveal; the guest's vote surfaces.
     await expect(page.locator('#participants-list')).toContainText('Guest');

@@ -40,6 +40,19 @@
         <div class="room-shell">
         <div class="room-userbar">
             <span id="user-greeting" class="user-greeting"></span>
+            <div class="room-actions" aria-label="Room actions">
+                <div class="invite-menu-wrap">
+                    <button id="invite-menu-button" class="toolbar-action hidden" type="button" aria-expanded="false" aria-controls="invite-menu">
+                        Invite
+                    </button>
+                    <div id="invite-menu" class="invite-menu hidden">
+                        <button id="copy-invite-link-button" class="invite-action" type="button">
+                            Copy invite link
+                        </button>
+                    </div>
+                </div>
+                <button id="end-session-button" class="toolbar-action danger hidden" type="button" aria-label="End session">End</button>
+            </div>
         </div>
 
         <div class="room-grid">
@@ -58,6 +71,18 @@
                     </div>
                     <p id="vote-error" class="form-error room-error hidden"></p>
                 </section>
+
+                <div id="facilitator-controls" class="facilitator-controls hidden">
+                    <button id="show-votes-button" class="success-action">
+                        Show Votes
+                    </button>
+                    <button id="start-next-round-button" class="secondary-action hidden">
+                        Next Round
+                    </button>
+                    <button id="reset-votes-button" class="danger-action">
+                        Reset Votes
+                    </button>
+                </div>
 
                 <section id="vote-summary" class="room-card result-card hidden" aria-labelledby="results-title">
                     <div class="section-heading compact">
@@ -88,16 +113,32 @@
                     </div>
                 </div>
                 <div id="participants-list" class="participants-list"></div>
+                <p id="role-error" class="form-error hidden"></p>
             </section>
         </div>
         </div>
     </main>
+
+    <div id="end-session-modal" class="modal-overlay hidden">
+        <section class="modal-content" role="dialog" aria-modal="true" aria-labelledby="end-session-title" aria-describedby="end-session-message">
+            <h2 id="end-session-title">End session?</h2>
+            <p id="end-session-message">This will clear this room and return everyone to the login screen.</p>
+            <p id="end-session-error" class="form-error hidden"></p>
+            <div class="modal-actions">
+                <button id="cancel-end-session-button" class="secondary-action" type="button">Cancel</button>
+                <button id="confirm-end-session-button" class="danger-action" type="button">End Session</button>
+            </div>
+        </section>
+    </div>
 
     <footer class="app-footer">
         <a href="/license">License Terms</a>
     </footer>
 
     <script src="js/cardDeck.js?v=2" defer></script>
-    <script src="js/join.js?v=4" defer></script>
+    <script src="js/clipboard.js?v=1" defer></script>
+    <script src="js/facilitatorControls.js?v=1" defer></script>
+    <script src="js/voteResults.js?v=1" defer></script>
+    <script src="js/join.js?v=5" defer></script>
 </body>
 </html>

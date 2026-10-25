@@ -4,6 +4,7 @@
     // --- Constants ---
     const fibonacciVotes = ['0', '1', '2', '3', '5', '8', '13', '?'];
     const cardDeck = window.ScrumPokerCardDeck;
+    const voteResults = window.ScrumPokerVoteResults;
 
     // --- DOM Elements ---
     const joinSection = document.getElementById('join-section');
@@ -18,13 +19,21 @@
     const observerMessage = document.getElementById('observer-message');
     const voteError = document.getElementById('vote-error');
     const participantsListContainer = document.getElementById('participants-list');
-    const voteSummary = document.getElementById('vote-summary');
-    const averageVoteSpan = document.getElementById('average-vote');
     const roundStatus = document.getElementById('round-status');
 
     // --- Card animator ---
     const cardAnimator = cardDeck.createCardAnimator({
         getCards: () => votingCardsContainer.querySelectorAll('.vote-card .card-inner')
+    });
+
+    // --- Facilitator controls ---
+    function send(type, payload) {
+        if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type, payload }));
+    }
+    const controls = window.ScrumPokerFacilitator.createFacilitatorControls({
+        document,
+        send,
+        copyText: window.ScrumPokerClipboard.copyText
     });
 
     // --- Application State ---
@@ -38,6 +47,8 @@
     let animateVotingCards = true;
     let voteErrorTimer = null;
     let ended = false;
+    let facilitatorIds = [];
+    let shareToken = null;
 
     // --- Read token from URL ---
     const token = new URLSearchParams(window.location.search).get('token');
@@ -74,6 +85,7 @@
     }
 
     function showJoinSection() {
+        controls.closeAll();
         joinSection.classList.remove('hidden');
         pokerRoomSection.classList.add('hidden');
         window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
@@ -150,6 +162,8 @@
                 participants = payload.participants || [];
                 votesRevealed = payload.votesRevealed || false;
                 roomName = payload.displayName || null;
+                facilitatorIds = payload.facilitatorIds || [];
+                shareToken = payload.shareToken || null;
 
                 if (myId) {
                     currentUser = participants.find(p => p.id === myId) || null;
@@ -180,8 +194,8 @@
                     showJoinError(errorMessage);
                     joinButton.disabled = false;
                 } else {
-                    // Non-fatal: show inline in room
-                    showVoteError(errorMessage);
+                    renderParticipantsList();
+                    if (!controls.handleError(errorMessage)) showVoteError(errorMessage);
                 }
                 break;
             }
@@ -211,7 +225,8 @@
         renderRoundStatus();
         renderVotingCards();
         renderParticipantsList();
-        renderResults();
+        controls.render({ currentUser, votesRevealed, facilitatorIds, shareToken });
+        voteResults.renderResults({ document, participants, votesRevealed });
     }
 
     function renderRoundStatus() {
@@ -272,6 +287,14 @@
             roleSpan.textContent = `(${participant.role})`;
             nameRoleDiv.appendChild(roleSpan);
 
+            const roleControl = controls.roleSelectFor(participant, { currentUser, facilitatorIds });
+            if (roleControl) {
+                const controlsDiv = document.createElement('div');
+                controlsDiv.classList.add('participant-role-controls');
+                controlsDiv.appendChild(roleControl);
+                nameRoleDiv.appendChild(controlsDiv);
+            }
+
             div.appendChild(nameRoleDiv);
 
             // Vote card
@@ -312,77 +335,11 @@
         });
     }
 
-    function renderResults() {
-        if (votesRevealed) {
-            voteSummary.classList.remove('hidden');
-            calculateAndDisplayAverage();
-
-            const voteEntries = participants
-                .filter(p => (p.role === 'Voter' || p.role === 'Facilitator') && p.vote !== null && !isNaN(parseInt(p.vote)))
-                .map(p => ({ name: p.name, vote: parseInt(p.vote) }))
-                .sort((a, b) => b.vote - a.vote);
-
-            const orderedContainer = document.getElementById('ordered-votes');
-            const orderedList = document.getElementById('ordered-votes-list');
-            orderedList.innerHTML = '';
-
-            const groups = {};
-            voteEntries.forEach(({ name, vote }) => {
-                if (!groups[vote]) groups[vote] = [];
-                groups[vote].push(name);
-            });
-
-            const sortedVotes = Object.keys(groups)
-                .map(v => parseInt(v))
-                .sort((a, b) => b - a);
-
-            sortedVotes.forEach(voteValue => {
-                const names = groups[voteValue].join(', ');
-                const line = document.createElement('div');
-                line.className = 'result-row';
-
-                const namesSpan = document.createElement('span');
-                namesSpan.className = 'result-names';
-                namesSpan.textContent = names;
-
-                const voteSpan = document.createElement('span');
-                voteSpan.className = 'result-value';
-                voteSpan.textContent = voteValue;
-
-                line.appendChild(namesSpan);
-                line.appendChild(voteSpan);
-                orderedList.appendChild(line);
-            });
-
-            if (sortedVotes.length > 0) {
-                orderedContainer.classList.remove('hidden');
-            }
-        } else {
-            voteSummary.classList.add('hidden');
-            document.getElementById('ordered-votes').classList.add('hidden');
-        }
-    }
-
-    function calculateAndDisplayAverage() {
-        let sum = 0;
-        let numericVoteCount = 0;
-        participants.forEach(p => {
-            if ((p.role === 'Voter' || p.role === 'Facilitator') && p.vote !== null && !isNaN(parseInt(p.vote))) {
-                sum += parseInt(p.vote);
-                numericVoteCount++;
-            }
-        });
-        const average = numericVoteCount > 0 ? (sum / numericVoteCount).toFixed(1) : '--';
-        averageVoteSpan.textContent = average;
-    }
-
     // --- Vote Handler ---
     function handleVote(event) {
         if (votesRevealed) return;
         const selectedValue = event.currentTarget.dataset.value;
-        if (ws && ws.readyState === WebSocket.OPEN) {
-            ws.send(JSON.stringify({ type: 'vote', payload: { vote: selectedValue } }));
-        }
+        send('vote', { vote: selectedValue });
         document.querySelectorAll('.vote-card').forEach(btn => btn.classList.remove('selected', 'picked'));
         const picked = event.currentTarget;
         picked.classList.add('selected', 'picked', 'placed');
