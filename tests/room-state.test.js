@@ -300,3 +300,18 @@ test('normalizeFacilitators demotes a Facilitator role that is not on the list',
   assert.equal(participants.bob.role, 'Voter');
 });
 
+test('normalizeFacilitators demotes a stale participant of this room who is no longer a member', () => {
+  const rooms = new Map();
+  const room = joinRoom(rooms, 'alpha', 'alice', 100);
+  room.facilitatorIds = ['alice', 'stale'];
+  const participants = {
+    alice: participant('alice', 'alpha', { role: 'Facilitator', authed: true }),
+    stale: participant('stale', 'alpha', { role: 'Facilitator', authed: true })
+  };
+
+  normalizeFacilitators(rooms, participants, 'alpha');
+
+  assert.deepEqual(room.facilitatorIds, ['alice']);
+  assert.equal(participants.stale.role, 'Voter');
+});
+

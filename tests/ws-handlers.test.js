@@ -11,7 +11,7 @@ const {
   handleStartNextRound,
   handleVote
 } = require('../lib/wsHandlers');
-const { joinRoom } = require('../lib/roomState');
+const { joinRoom, normalizeFacilitators } = require('../lib/roomState');
 const { ROLES } = require('../lib/roles');
 
 function createHarness(t) {
@@ -618,3 +618,14 @@ test('a co-facilitator who logs into another room leaves the first room\'s list'
   assert.deepEqual(room.facilitatorIds, ['alice']);
   assert.equal(h.participants.bob.roomName, 'co1-retro');
 });
+
+test('a stale facilitator outside room membership loses reveal once the list is normalised', (t) => {
+  const { h, roomName } = coFacilitatorRoom(t, { facilitators: ['alice'] });
+  h.participants.stale = participant('stale', roomName, { role: ROLES.FACILITATOR });
+  h.rooms.get(roomName).facilitatorIds.push('stale');
+  normalizeFacilitators(h.rooms, h.participants, roomName);
+
+  handleRevealVotes({ ...h, ws: h.participants.stale.ws, currentUser: h.participants.stale });
+  assert.equal(h.rooms.get(roomName).votesRevealed, false);
+});
+

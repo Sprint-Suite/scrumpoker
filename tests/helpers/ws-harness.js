@@ -53,14 +53,19 @@ async function until(check, ms = 2000) {
   assert.fail('condition not met in time');
 }
 
-// Collects a socket's messages so tests can wait for one matching a predicate.
+// Waits for a socket's messages in order: each next() only looks at messages
+// after the one the previous call matched, so an old state never satisfies a new wait.
 function inbox(ws) {
   const messages = ws.received;
+  let cursor = 0;
   return {
     messages,
     async next(predicate, ms = 2000) {
-      await until(() => messages.some(predicate), ms);
-      return messages.find(predicate);
+      const find = () => messages.findIndex((m, i) => i >= cursor && predicate(m));
+      await until(() => find() !== -1, ms);
+      const index = find();
+      cursor = index + 1;
+      return messages[index];
     }
   };
 }
