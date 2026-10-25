@@ -261,7 +261,7 @@ test('normalizeFacilitators keeps a co-facilitator when one leaves', () => {
   assert.equal(participants.carol.role, 'Voter');
 });
 
-test('normalizeFacilitators drops missing, cross-room, guest and duplicate ids and caps the list', () => {
+test('normalizeFacilitators drops missing, cross-room and duplicate ids and caps the list', () => {
   const rooms = new Map();
   const room = joinRoom(rooms, 'alpha', 'alice', 100);
   joinRoom(rooms, 'alpha', 'bob', 100);
@@ -277,12 +277,31 @@ test('normalizeFacilitators drops missing, cross-room, guest and duplicate ids a
   };
   room.facilitatorIds = ['ghost', 'dave', 'guest', 'alice', 'alice', 'bob', 'carol'];
 
-  assert.deepEqual(normalizeFacilitators(rooms, participants, 'alpha'), ['alice', 'bob']);
+  assert.deepEqual(normalizeFacilitators(rooms, participants, 'alpha'), ['guest', 'alice']);
   assert.equal(participants.dave.role, 'Voter', 'a cross-room id is never promoted');
-  assert.equal(participants.guest.role, 'Voter');
+  assert.equal(participants.guest.role, 'Facilitator');
   assert.equal(participants.carol.role, 'Voter');
   assert.equal(participants.alice.role, 'Facilitator');
-  assert.equal(participants.bob.role, 'Facilitator');
+  assert.equal(participants.bob.role, 'Voter');
+});
+
+test('normalizeFacilitators keeps a guest facilitator alone in a guest-only room', () => {
+  const rooms = new Map();
+  const room = joinRoom(rooms, 'alpha', 'g1', 100);
+  joinRoom(rooms, 'alpha', 'g2', 100);
+  const participants = {
+    g1: participant('g1', 'alpha', { authed: false }),
+    g2: participant('g2', 'alpha', { authed: false })
+  };
+  room.facilitatorIds = ['g1'];
+
+  assert.deepEqual(normalizeFacilitators(rooms, participants, 'alpha'), ['g1']);
+
+  leaveRoom(rooms, 'alpha', 'g1', 200);
+  reassignFacilitatorIfLeaving(rooms, participants, 'alpha', 'g1');
+
+  assert.deepEqual(room.facilitatorIds, []);
+  assert.equal(participants.g2.role, 'Voter');
 });
 
 test('normalizeFacilitators demotes a Facilitator role that is not on the list', () => {
