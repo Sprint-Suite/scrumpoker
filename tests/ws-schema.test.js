@@ -135,3 +135,9 @@ test('validateMessage: inherited Object.prototype names are unknown types, not c
     assert.equal(result.error.message, 'unknown_message_type', type);
   }
 });
+
+test('validateMessage: login accepts a 32-hex rejoinKey and rejects other lengths', () => {
+  assert.equal(validateMessage('login', { name: 'G', rejoinKey: 'a'.repeat(32) }).ok, true);
+  assert.equal(validateMessage('login', { name: 'G', rejoinKey: 'abc' }).ok, false);
+  assert.equal(validateMessage('login', { name: 'G', rejoinKey: 'a'.repeat(33) }).ok, false);
+});

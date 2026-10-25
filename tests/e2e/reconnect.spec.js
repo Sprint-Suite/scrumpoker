@@ -92,7 +92,7 @@ test('a member whose session has gone is sent back through sign-in', async ({ pa
   await navigated;
 });
 
-test('a guest who rejoins after the room closed is told the room may be gone or the server busy', async ({ page, context, browser }) => {
+test('a guest who drops reconnects, and one who joins after the room closed is told the room may be gone or the server busy', async ({ page, context, browser }) => {
   seedSession();
   await injectSession(context);
   await page.goto('/');
@@ -113,15 +113,103 @@ test('a guest who rejoins after the room closed is told the room may be gone or 
     await expect(anon.locator('#poker-room-section')).toBeVisible();
 
     await guestSockets[0].ws.close({ code: 1001 });
-    await expect(anon.locator('#join-error')).toContainText('Disconnected');
+    await expect(anon.locator('#connection-status')).toHaveText('Reconnecting...');
+    await expect(anon.locator('#poker-room-section')).toBeVisible();
+    await expect(anon.locator('#connection-status')).toHaveText('Connected');
 
     await page.click('#end-session-button');
     await page.click('#confirm-end-session-button');
     await expect(page.locator('#login-section')).toBeVisible();
 
+    await anon.goto(`/join?token=${token}`);
+    await anon.fill('#join-name-input', 'Guest');
     await anon.click('#join-button');
     await expect(anon.locator('#join-error')).toContainText('may have closed, or the server is busy');
   } finally {
     await anonCtx.close();
+  }
+});
+
+// Tracks a guest page's sockets and the frames it sends to the server.
+async function trackGuestSockets(page) {
+  const sockets = [];
+  await page.routeWebSocket(/\/ws/, (ws) => {
+    const sent = [];
+    const server = ws.connectToServer();
+    ws.onMessage((message) => { sent.push(JSON.parse(message)); server.send(message); });
+    sockets.push({ ws, sent });
+  });
+  return sockets;
+}
+
+async function joinGuestPage(browser, token) {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  const sockets = await trackGuestSockets(page);
+  await page.goto(`/join?token=${token}`);
+  await page.fill('#join-name-input', 'Guest');
+  await page.click('#join-button');
+  await expect(page.locator('#poker-room-section')).toBeVisible();
+  return { context, page, sockets };
+}
+
+async function openMemberRoom(browser, id, room) {
+  seedSession({ id, userId: `u-${id}` });
+  const context = await browser.newContext();
+  await injectSession(context, id);
+  const page = await context.newPage();
+  await page.goto('/');
+  await page.fill('#room-input', room);
+  await page.fill('#name-input', 'Alice');
+  await page.selectOption('#role-select', 'Facilitator');
+  await page.click('#login-button');
+  await expect(page.locator('#poker-room-section')).toBeVisible();
+  return { context, token: await page.locator('#poker-room-section').getAttribute('data-share-token') };
+}
+
+test('an active guest retry that gets a 1008 close stops and explains', async ({ browser }) => {
+  const member = await openMemberRoom(browser, 's-rc-1008-retry', 'rc-1008-retry');
+  const guest = await joinGuestPage(browser, member.token);
+  try {
+    await guest.sockets[0].ws.close({ code: 1001 });
+    await expect(guest.page.locator('#connection-status')).toHaveText('Reconnecting...');
+    await expect.poll(() => guest.sockets.length).toBe(2);
+    await guest.sockets[1].ws.close({ code: 1008, reason: 'Too many messages' });
+    await expect(guest.page.locator('#join-error')).toContainText('too many messages');
+    await guest.page.waitForTimeout(2500);
+    expect(guest.sockets).toHaveLength(2);
+  } finally {
+    await Promise.all([member.context.close(), guest.context.close()]);
+  }
+});
+
+test('a manual Join after a 1008 close still sends the rejoin key', async ({ browser }) => {
+  const member = await openMemberRoom(browser, 's-rc-key-kept', 'rc-key-kept');
+  const guest = await joinGuestPage(browser, member.token);
+  try {
+    await expect.poll(() => guest.page.evaluate(() => sessionStorage.getItem('scrumPokerGuest'))).toContain('rejoinKey');
+    const { rejoinKey } = JSON.parse(await guest.page.evaluate(() => sessionStorage.getItem('scrumPokerGuest')));
+    expect(guest.sockets[0].sent[0].payload.rejoinKey).toBeUndefined();
+
+    await guest.sockets[0].ws.close({ code: 1008, reason: 'Too many messages' });
+    await expect(guest.page.locator('#join-error')).toContainText('too many messages');
+    await guest.page.click('#join-button');
+    await expect(guest.page.locator('#poker-room-section')).toBeVisible();
+    expect(guest.sockets[1].sent[0].payload.rejoinKey).toBe(rejoinKey);
+  } finally {
+    await Promise.all([member.context.close(), guest.context.close()]);
+  }
+});
+
+test('a 4000 close without the replaced message is terminal and does not reconnect', async ({ browser }) => {
+  const member = await openMemberRoom(browser, 's-rc-4000', 'rc-4000');
+  const guest = await joinGuestPage(browser, member.token);
+  try {
+    await guest.sockets[0].ws.close({ code: 4000, reason: 'replaced' });
+    await expect(guest.page.locator('#join-error')).toHaveText('This session continued in another tab or window.');
+    await guest.page.waitForTimeout(2500);
+    expect(guest.sockets).toHaveLength(1);
+  } finally {
+    await Promise.all([member.context.close(), guest.context.close()]);
   }
 });
