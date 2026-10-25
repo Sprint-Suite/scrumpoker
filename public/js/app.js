@@ -17,17 +17,7 @@
  const observerMessage = document.getElementById('observer-message');
  const voteError = document.getElementById('vote-error');
  const participantsListContainer = document.getElementById('participants-list');
- const facilitatorControls = document.getElementById('facilitator-controls');
- const showVotesButton = document.getElementById('show-votes-button');
- const startNextRoundButton = document.getElementById('start-next-round-button');
- const resetVotesButton = document.getElementById('reset-votes-button');
- const voteSummary = document.getElementById('vote-summary');
- const averageVoteSpan = document.getElementById('average-vote');
  const roundStatus = document.getElementById('round-status');
- const inviteMenuButton = document.getElementById('invite-menu-button');
- const inviteMenu = document.getElementById('invite-menu');
- const copyInviteLinkButton = document.getElementById('copy-invite-link-button');
- const endSessionButton = document.getElementById('end-session-button');
  const logoutButton = document.getElementById('logout-button');
 
  const editRoleButton = document.getElementById('edit-role-button');
@@ -36,10 +26,6 @@
  const editRoleError  = document.getElementById('edit-role-error');
  const saveRoleButton   = document.getElementById('save-role-button');
  const cancelEditRoleButton = document.getElementById('cancel-edit-role-button');
- const endSessionModal = document.getElementById('end-session-modal');
- const endSessionError = document.getElementById('end-session-error');
- const confirmEndSessionButton = document.getElementById('confirm-end-session-button');
- const cancelEndSessionButton = document.getElementById('cancel-end-session-button');
 
  const connectionStatus = document.getElementById('connection-status');
 
@@ -53,6 +39,20 @@
  const cardAnimator = cardDeck.createCardAnimator({
      getCards: () => votingCardsContainer.querySelectorAll('.vote-card .card-inner')
  });
+const voteResults = window.ScrumPokerVoteResults;
+const facilitatorControls = window.ScrumPokerFacilitator.createFacilitatorControls({
+    document,
+    send: sendMessage,
+    copyText: window.ScrumPokerClipboard.copyText,
+    onReset: (sendReset) => {
+        animateVotingCards = true;
+        resetFaceDownBeforeStateUpdate = true;
+        cardAnimator.animateCardsFaceDownBeforeReset(() => {
+            sendReset();
+            resetAllCards();
+        });
+    }
+});
  const ROOM_SESSION_STORAGE = 'scrumPokerRoomSession';
  const ROOM_RECONNECT_STORAGE = 'scrumPokerReconnectToRoom';
  // --- Application State (Managed primarily by server now) ---
@@ -62,7 +62,6 @@
  let currentRoom = null;   // ← NEW: will hold the room name after login
  let participants = []; // Array of user objects received from server
  let votesRevealed = false; // Status received from server
- const MAX_FACILITATORS = 2; // mirrors lib/roles.js
  let facilitatorIds = []; // IDs received from server
  let pendingLoginContext = null;
  let pendingLoginSource = '';
@@ -298,12 +297,8 @@ function showVoteError(message) {
                  refreshLoginButton();
              }
              if (isRoomVisible()) {
-                 if (isEndSessionModalOpen()) {
-                     showEndSessionError(errorMessage);
-                     resetEndSessionButton();
-                 } else {
-                     showVoteError(errorMessage);
-                 }
+                 renderParticipantsList();
+                 if (!facilitatorControls.handleError(errorMessage)) showVoteError(errorMessage);
              } else if (isLoginVisible()) {
                  showLoginError(errorMessage);
              } else {
@@ -470,60 +465,12 @@ function markRoomReconnectIntent() {
      roomInput.addEventListener('keypress', (e) => {
          if (e.key === 'Enter' && !loginButton.disabled) handleLogin();
      });
-     showVotesButton.addEventListener('click', handleShowVotes);
-     startNextRoundButton.addEventListener('click', handleStartNextRound);
-     resetVotesButton.addEventListener('click', handleResetVotes);
-
-     inviteMenuButton.addEventListener('click', toggleInviteMenu);
-     copyInviteLinkButton.addEventListener('click', handleCopyRoomInvite);
-     endSessionButton.addEventListener('click', openEndSessionModal);
-     confirmEndSessionButton.addEventListener('click', handleConfirmEndSession);
-     cancelEndSessionButton.addEventListener('click', closeEndSessionModal);
      logoutButton.addEventListener('click', logout);
 
      // Replace the old event binding:
      editRoleButton.addEventListener('click', openEditRoleModal);
      saveRoleButton.addEventListener('click', handleSaveRole);
      cancelEditRoleButton.addEventListener('click', closeEditRoleModal);
-     document.addEventListener('click', handleDocumentClick);
-     document.addEventListener('keydown', handleDocumentKeydown);
- }
-
- function isInviteMenuOpen() {
-     return !inviteMenu.classList.contains('hidden');
- }
-
- function openInviteMenu() {
-     if (currentUser?.role !== 'Facilitator') return;
-     inviteMenu.classList.remove('hidden');
-     inviteMenuButton.setAttribute('aria-expanded', 'true');
- }
-
- function closeInviteMenu() {
-     inviteMenu.classList.add('hidden');
-     inviteMenuButton.setAttribute('aria-expanded', 'false');
- }
-
- function toggleInviteMenu(event) {
-     event.stopPropagation();
-     if (isInviteMenuOpen()) {
-         closeInviteMenu();
-     } else {
-         openInviteMenu();
-     }
- }
-
- function handleDocumentClick(event) {
-     if (!isInviteMenuOpen()) return;
-     if (inviteMenu.contains(event.target) || inviteMenuButton.contains(event.target)) return;
-     closeInviteMenu();
- }
-
- function handleDocumentKeydown(event) {
-     if (event.key === 'Escape' && isInviteMenuOpen()) {
-         closeInviteMenu();
-         inviteMenuButton.focus();
-     }
  }
 
  // Function to open modal and pre‐select current role
@@ -541,43 +488,6 @@ function markRoomReconnectIntent() {
  editRoleModal.classList.add('hidden');
  }
 
- function isEndSessionModalOpen() {
-     return !endSessionModal.classList.contains('hidden');
- }
-
- function resetEndSessionButton() {
-     confirmEndSessionButton.disabled = false;
-     confirmEndSessionButton.textContent = 'End Session';
- }
-
- function showEndSessionError(message) {
-     endSessionError.textContent = message;
-     endSessionError.classList.remove('hidden');
- }
-
- function openEndSessionModal() {
-     if (currentUser?.role !== 'Facilitator') return;
-
-     endSessionError.classList.add('hidden');
-     resetEndSessionButton();
-     endSessionModal.classList.remove('hidden');
- }
-
- function closeEndSessionModal() {
-     endSessionModal.classList.add('hidden');
-     endSessionError.classList.add('hidden');
-     resetEndSessionButton();
- }
-
- function handleConfirmEndSession() {
-     if (currentUser?.role !== 'Facilitator') return;
-
-     endSessionError.classList.add('hidden');
-     confirmEndSessionButton.disabled = true;
-     confirmEndSessionButton.textContent = 'Ending...';
-     sendMessage('endSession', {});
- }
-
  // On save, send changeRole for self
  function handleSaveRole() {
  const newRole = editRoleSelect.value;
@@ -593,7 +503,7 @@ function markRoomReconnectIntent() {
 
  // --- View Management ---
  function showLogin({ clearError = true } = {}) {
-     closeInviteMenu();
+     facilitatorControls.closeAll();
      loginSection.classList.remove('hidden');
      pokerRoomSection.classList.add('hidden');
      if (clearError) {
@@ -642,22 +552,7 @@ function markRoomReconnectIntent() {
     // Render Participants List
     renderParticipantsList();
 
-    // Show/Hide Facilitator Controls & Enable/Disable buttons
-    if (currentUser.role === 'Facilitator') {
-        facilitatorControls.classList.remove('hidden');
-        inviteMenuButton.classList.remove('hidden');
-        showVotesButton.disabled = votesRevealed; // Disable if already revealed
-        startNextRoundButton.classList.toggle('hidden', !votesRevealed);
-        startNextRoundButton.disabled = !votesRevealed;
-        resetVotesButton.disabled = false;
-        endSessionButton.classList.remove('hidden');
-    } else {
-        facilitatorControls.classList.add('hidden');
-        inviteMenuButton.classList.add('hidden');
-        closeInviteMenu();
-        startNextRoundButton.classList.add('hidden');
-        endSessionButton.classList.add('hidden');
-    }
+    facilitatorControls.render({ currentUser, votesRevealed, facilitatorIds, shareToken: currentShareToken });
 
     // Show/Hide Observer Message & Disable Voting Cards
     if (currentUser.role === 'Observer') {
@@ -668,70 +563,13 @@ function markRoomReconnectIntent() {
         votingCardsContainer.classList.remove('is-disabled');
     }
 
-    // Show/Hide Vote Summary & Calculate Average
-    if (votesRevealed) {
-        voteSummary.classList.remove('hidden');
-        calculateAndDisplayAverage();
-
-        // Build an array of { name, vote }, sorted descending
-        const voteEntries = participants
-            .filter(p => (p.role === 'Voter' || p.role === 'Facilitator') && p.vote !== null && !isNaN(parseInt(p.vote)))
-            .map(p => ({ name: p.name, vote: parseInt(p.vote) }))
-            .sort((a, b) => b.vote - a.vote);
-
-        const orderedContainer = document.getElementById('ordered-votes');
-        const orderedList = document.getElementById('ordered-votes-list');
-        orderedList.innerHTML = '';
-
-        // Group by vote value: { 8: ['John','David'], 5: ['Mike','Steve'], ... }
-        const groups = {};
-        voteEntries.forEach(({ name, vote }) => {
-            if (!groups[vote]) groups[vote] = [];
-            groups[vote].push(name);
-        });
-
-        // Sort vote values descending.
-        const sortedVotes = Object.keys(groups)
-            .map(v => parseInt(v))
-            .sort((a, b) => b - a);
-
-        // Render each group as "Name1, Name2, …    —— voteValue"
-        sortedVotes.forEach(voteValue => {
-            const names = groups[voteValue].join(', ');
-            const line = document.createElement('div');
-            line.className = 'result-row';
-
-            const namesSpan = document.createElement('span');
-            namesSpan.className = 'result-names';
-            namesSpan.textContent = names;
-
-            const voteSpan = document.createElement('span');
-            voteSpan.className = 'result-value';
-            voteSpan.textContent = voteValue;
-
-            line.appendChild(namesSpan);
-            line.appendChild(voteSpan);
-            orderedList.appendChild(line);
-        });
-
-        // Show container only if at least one group exists
-        if (sortedVotes.length > 0) {
-            orderedContainer.classList.remove('hidden');
-        }
-    } else {
-        voteSummary.classList.add('hidden');
-
-        // Hide ordered results when votes are reset or hidden
-        document.getElementById('ordered-votes').classList.add('hidden');
-    }
+    voteResults.renderResults({ document, participants, votesRevealed });
 }
 
 function renderRoundStatus() {
     roundStatus.textContent = votesRevealed ? 'Revealed' : 'Open';
     roundStatus.classList.toggle('is-locked', votesRevealed);
 }
-
-const { copyText } = window.ScrumPokerClipboard;
 
 
 function renderVotingCards() {
@@ -797,32 +635,12 @@ function renderVotingCards() {
           }
          nameRoleDiv.appendChild(roleSpan);
 
-          // --- Role change controls (for Facilitator view) ---
-          if (currentUser?.role === 'Facilitator' && participant.id !== currentUser.id) {
+          const roleControl = facilitatorControls.roleSelectFor(participant, { currentUser, facilitatorIds });
+          if (roleControl) {
               const controlsDiv = document.createElement('div');
-              controlsDiv.classList.add('participant-role-controls'); // Spacing and wrapping for controls
-
-              // Select dropdown for roles
-              const roleSelect = document.createElement('select');
-              roleSelect.classList.add('participant-role-select');
-              // A full facilitator list only offers the role to those already holding it.
-              const canGrant = facilitatorIds.length < MAX_FACILITATORS || facilitatorIds.includes(participant.id);
-              const roles = canGrant ? ['Voter', 'Observer', 'Facilitator'] : ['Voter', 'Observer'];
-              roles.forEach(r => {
-                  const option = document.createElement('option');
-                  option.value = r;
-                  option.textContent = r;
-                  if (r === participant.role) {
-                      option.selected = true;
-                  }
-                  roleSelect.appendChild(option);
-              });
-              roleSelect.addEventListener('change', (e) => {
-                  handleChangeRole(participant.id, e.target.value);
-              });
-              controlsDiv.appendChild(roleSelect);
-
-              nameRoleDiv.appendChild(controlsDiv); // Add controls below/beside name/role
+              controlsDiv.classList.add('participant-role-controls');
+              controlsDiv.appendChild(roleControl);
+              nameRoleDiv.appendChild(controlsDiv);
           }
 
 
@@ -871,37 +689,6 @@ function renderVotingCards() {
  }
 
  // --- Event Handlers (Send messages to server) ---
- function createRoomInviteUrl() {
-  if (!currentShareToken) return '';
-  return `${window.location.origin}/join?token=${currentShareToken}`;
- }
-
- async function handleCopyRoomInvite(event) {
-  if (currentUser?.role !== 'Facilitator') return;
-
-  const button = event.currentTarget;
-  const inviteUrl = createRoomInviteUrl();
-  if (!inviteUrl) {
-    showVoteError('Invite link unavailable. Rejoin the room and try again.');
-    return;
-  }
-
-  const originalText = button.textContent.trim();
-  button.disabled = true;
-
-  try {
-    await copyText(inviteUrl);
-    button.textContent = 'Copied invite link';
-  } catch (_err) {
-    button.textContent = 'Copy failed';
-  } finally {
-    setTimeout(() => {
-      button.disabled = false;
-      button.textContent = originalText;
-    }, 1600);
-  }
- }
-
  function handleLogin() {
   const name = nameInput.value.trim();
   const role = roleSelect.value;
@@ -929,41 +716,10 @@ function renderVotingCards() {
         picked.addEventListener('animationend', () => picked.classList.remove('placed'), { once: true });
     }
 
- function handleShowVotes() {
-      if (currentUser?.role === 'Facilitator' && !votesRevealed) {
-         sendMessage('revealVotes', {});
-     }
- }
-
- function handleStartNextRound() {
-     if (currentUser?.role === 'Facilitator' && votesRevealed) {
-         startNextRoundButton.disabled = true;
-         sendMessage('startNextRound', {});
-     }
- }
-
  function resetAllCards() {
 
      document.querySelectorAll('.flip-card').forEach(card => card.classList.remove('flipped'));
  }
-
- function handleResetVotes() {
-     animateVotingCards = true;
-      if (currentUser?.role === 'Facilitator') {
-         resetVotesButton.disabled = true;
-         resetFaceDownBeforeStateUpdate = true;
-         cardAnimator.animateCardsFaceDownBeforeReset(() => {
-             sendMessage('resetVotes', {});
-             resetAllCards();
-         });
-     }
- }
-
-  function handleChangeRole(targetUserId, newRole) {
-      if (currentUser?.role === 'Facilitator') {
-          sendMessage('changeRole', { targetUserId: targetUserId, newRole: newRole });
-      }
-  }
 
   function resetRoomState() {
      currentUser = null;
@@ -984,7 +740,7 @@ function renderVotingCards() {
   function handleSessionEnded(message) {
      resetRoomState();
      closeEditRoleModal();
-     closeEndSessionModal();
+     facilitatorControls.closeAll();
      showLogin({ clearError: false });
      showLoginError(message);
      updateConnectionStatus('connected', 'Connected');
@@ -1001,23 +757,6 @@ function renderVotingCards() {
 
      // Navigate to hub logout
      window.location.assign('/auth/logout');
- }
-
- // --- Calculations (Uses local state derived from server) ---
- function calculateAndDisplayAverage() {
-     let sum = 0;
-     let numericVoteCount = 0;
-
-     participants.forEach(p => {
-         // Only include numeric votes from Voters or Facilitators
-         if ((p.role === 'Voter' || p.role === 'Facilitator') && p.vote !== null && !isNaN(parseInt(p.vote))) {
-             sum += parseInt(p.vote);
-             numericVoteCount++;
-         }
-     });
-
-     const average = numericVoteCount > 0 ? (sum / numericVoteCount).toFixed(1) : '--';
-     averageVoteSpan.textContent = average;
  }
 
  // --- Start the application ---

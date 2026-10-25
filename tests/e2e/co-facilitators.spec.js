@@ -55,3 +55,31 @@ test('a facilitator adds a co-facilitator who keeps the room running after they 
     await Promise.all([alice, bob, carol].map(({ context }) => context.close()));
   }
 });
+
+test('a refused role change shows the error by the list and resets the select', async ({ browser }) => {
+  seedSession({ id: 's-cf-rf-alice', userId: 'u-cf-rf-alice' });
+  seedSession({ id: 's-cf-rf-bob', userId: 'u-cf-rf-bob' });
+  seedSession({ id: 's-cf-rf-carol', userId: 'u-cf-rf-carol' });
+
+  const alice = await joinAs(browser, { sessionId: 's-cf-rf-alice', name: 'Alice', role: 'Facilitator' });
+  const bob = await joinAs(browser, { sessionId: 's-cf-rf-bob', name: 'Bob', role: 'Voter' });
+  const carol = await joinAs(browser, { sessionId: 's-cf-rf-carol', name: 'Carol', role: 'Voter' });
+  try {
+    await row(alice.page, 'Bob').locator('.participant-role-select').selectOption('Facilitator');
+    await expect(bob.page.locator('#user-greeting')).toHaveText('Hello, Bob (Facilitator)');
+    await expect(roleOptions(alice.page, 'Carol')).toHaveText(['Voter', 'Observer']);
+
+    // A stale page still offers the role the server now refuses.
+    const carolSelect = row(alice.page, 'Carol').locator('.participant-role-select');
+    await carolSelect.evaluate((select) => {
+      select.insertAdjacentHTML('beforeend', '<option value="Facilitator">Facilitator</option>');
+    });
+    await carolSelect.selectOption('Facilitator');
+
+    await expect(alice.page.locator('#role-error')).toHaveText('A room can have at most two facilitators.');
+    await expect(alice.page.locator('#vote-error')).toBeHidden();
+    await expect(row(alice.page, 'Carol').locator('.participant-role-select')).toHaveValue('Voter');
+  } finally {
+    await Promise.all([alice, bob, carol].map(({ context }) => context.close()));
+  }
+});
