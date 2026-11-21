@@ -47,3 +47,11 @@ test('/health returns ok', async () => {
   assert.equal(res.status, 200);
   assert.equal(res.body.status, 'ok');
 });
+
+for (const p of ['/license', '/licence', '/license.html']) {
+  test(`${p} permanently redirects to the Hub licence`, async () => {
+    const res = await request(build()).get(p).redirects(0);
+    assert.equal(res.status, 301);
+    assert.equal(res.headers.location, 'https://sprintsuite.uk/license');
+  });
+}

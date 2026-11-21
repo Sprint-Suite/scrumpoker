@@ -11,7 +11,7 @@ test("index.html has a hidden Return-to-Suite button + the snippet", () => {
   assert.match(html, /\/auth-client\/suite-return\.js/, "snippet included");
 });
 
-for (const shell of ["join.html", "license.html"]) {
+for (const shell of ["join.html"]) {
   test(`${shell} (anon/public) does NOT have the Return-to-Suite button`, () => {
     const html = fs.readFileSync(path.join(__dirname, "../public", shell), "utf8");
     assert.doesNotMatch(html, /data-suite-return/, "anon shell must not show the button");
